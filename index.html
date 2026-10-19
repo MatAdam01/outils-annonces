@@ -517,7 +517,6 @@ function compute(){
     <div class="big">${ci} col × ${lignes} lignes</div>
     <div class="sub">${exact.toFixed(2)} lignes mesurées · surface ${surface} · ${prixA.toFixed(2)} $ avant suppléments</div>
     ${warn}
-    <button class="copy" data-c="${ci}" data-l="${lignes}">Copier pour Airtable</button>
   </div>`;
 
   if (std && std.l !== lignes){
@@ -527,8 +526,7 @@ function compute(){
       <div class="tag">Format standard le plus proche — ${std.b}</div>
       <div class="big">${std.c} col × ${std.l} lignes</div>
       <div class="sub">${Math.abs(std.l-lignes)} ligne${Math.abs(std.l-lignes)>1?"s":""} d'écart · ${prixB.toFixed(2)} $ · ${d>0?"+":""}${d.toFixed(2)} $</div>
-      <p class="why">L'annonce ne tombe pas sur un format de la carte. Si elle a été vendue à un format standard, c'est cette valeur qu'il faut inscrire.</p>
-      <button class="copy" data-c="${std.c}" data-l="${std.l}">Copier pour Airtable</button>
+      <p class="why">L'annonce ne tombe pas sur un format de la carte. Si elle a été vendue à un format standard, c'est cette valeur qu'il faut retenir.</p>
     </div>`;
   } else if (std){
     html += `<p class="note">Correspond exactement au format ${std.b} de la carte.</p>`;
@@ -537,12 +535,6 @@ function compute(){
   html += `<p class="note">Pour le tarif couleur d'un OBNL local, le script Airtable rattache cette surface au format « ${bucket.n} ».</p>`;
 
   $("out").innerHTML = html;
-  $("out").querySelectorAll(".copy").forEach(b=> b.addEventListener("click", ()=>{
-    navigator.clipboard.writeText(`${b.dataset.c}\t${b.dataset.l}`).then(()=>{
-      const t = b.textContent; b.textContent = "Copié : " + b.dataset.c + " et " + b.dataset.l;
-      setTimeout(()=> b.textContent = t, 1800);
-    });
-  }));
 
   draw(ci, lignes, std && std.l !== lignes ? std : null);
 }
