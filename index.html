@@ -67,6 +67,8 @@ figcaption{color:var(--muted);font-size:12.5px;margin-top:8px}
 .pwrap #preview{border:1px solid var(--rule);background:#fff}
 .pwrap #overlay{position:absolute;left:0;top:0;pointer-events:none}
 .pcap{color:var(--muted);font-size:12.5px;margin-top:8px;text-align:center;line-height:1.5}
+.pfull{display:block;text-align:center;font-size:13px;color:var(--muted);margin-top:6px;cursor:pointer}
+.pfull input{margin-right:5px;vertical-align:-1px}
 
 .status{margin-top:18px;padding:11px 13px;border-left:3px solid var(--rule);background:var(--band);font-size:14px}
 .status.ok{border-color:var(--mes)}
@@ -139,6 +141,7 @@ td.num{text-align:right}
       <canvas id="overlay"></canvas>
     </div>
     <p class="pcap" id="pcap" hidden></p>
+    <label class="pfull" id="pfullwrap" hidden><input type="checkbox" id="pfull"> Afficher la page entière</label>
 
     <figure>
       <svg id="viz" viewBox="0 0 320 420" role="img" aria-label="Position de l'annonce dans la grille de la page"></svg>
@@ -248,6 +251,7 @@ function buildColInputs(){
 buildColInputs();
 ["agate","maxl","tol","eps","tarifSel","w","h"].forEach(id=> $(id).addEventListener("input", compute));
 $("tarifSel").addEventListener("change", compute);
+$("pfull").addEventListener("change", renderPreview);
 
 // ---------- géométrie PDF ----------
 function mul(a,b){
@@ -348,6 +352,7 @@ async function readImage(file, buf){
 async function handle(file, buf){
   setStatus("Lecture de " + file.name + "…", "");
   boxes = []; proofRead = null; selIdx = 0; preview = null;
+  $("pfull").checked = false;
   try{
     if ((file.type||"").includes("pdf") || /\.pdf$/i.test(file.name)){
       const r = await readPdf(buf);
@@ -397,32 +402,65 @@ function renderCands(){
     selIdx = +btn.dataset.box;
     const b = boxes[selIdx];
     $("w").value = b.w.toFixed(3); $("h").value = b.h.toFixed(3);
-    compute(); drawOverlay();
+    compute(); renderPreview();
   }));
 }
 
 // ---------- aperçu du fichier ----------
 async function renderPreview(){
   const wrap = $("pwrap"), cap = $("pcap"), cv = $("preview");
-  if (!preview){ wrap.style.display = "none"; cap.hidden = true; return; }
+  const full = $("pfull"), fullWrap = $("pfullwrap");
+  if (!preview){
+    wrap.style.display = "none"; cap.hidden = true; fullWrap.hidden = true; return;
+  }
 
   wrap.style.display = "inline-block";
   const avail = (wrap.parentElement.clientWidth || 360) - 2;
   const maxW = Math.min(380, avail);
+  const maxH = 520;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const ctx = cv.getContext("2d");
+  let cropped = false;
 
   try{
     if (preview.type === "pdf"){
-      const base = preview.page.getViewport({scale:1});
-      const scale = maxW / base.width;
-      const vp = preview.page.getViewport({scale: scale*dpr});
-      cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
-      cv.style.width = Math.round(vp.width/dpr)+"px";
-      cv.style.height = Math.round(vp.height/dpr)+"px";
+      const page = preview.page;
+      const view = page.view;               // [x0,y0,x1,y1] de la boîte de page
+      const sel = boxes[selIdx];
+
+      // Recadrage sur l'élément mesuré : une épreuve est une page entière
+      // dont l'annonce n'occupe qu'une partie.
+      let crop = null;
+      if (sel && !full.checked){
+        const r = sel.rect;
+        const mx = Math.max(6, (r[2]-r[0]) * 0.04);
+        const my = Math.max(6, (r[3]-r[1]) * 0.04);
+        crop = [Math.max(view[0], r[0]-mx), Math.max(view[1], r[1]-my),
+                Math.min(view[2], r[2]+mx), Math.min(view[3], r[3]+my)];
+        cropped = true;
+      }
+
+      const vp1 = page.getViewport({scale:1});
+      const box1 = crop ? vp1.convertToViewportRectangle(crop)
+                        : [0, 0, vp1.width, vp1.height];
+      const w1 = Math.abs(box1[2]-box1[0]), h1 = Math.abs(box1[3]-box1[1]);
+      const scale = Math.min(maxW/w1, maxH/h1) * dpr;
+
+      const vpS = page.getViewport({scale});
+      let ox = 0, oy = 0, cw = vpS.width, ch = vpS.height;
+      if (crop){
+        const rS = vpS.convertToViewportRectangle(crop);
+        ox = Math.min(rS[0], rS[2]); oy = Math.min(rS[1], rS[3]);
+        cw = Math.abs(rS[2]-rS[0]); ch = Math.abs(rS[3]-rS[1]);
+      }
+      const vp = page.getViewport({scale, offsetX:-ox, offsetY:-oy});
+
+      cv.width = Math.round(cw); cv.height = Math.round(ch);
+      cv.style.width = Math.round(cw/dpr)+"px";
+      cv.style.height = Math.round(ch/dpr)+"px";
       ctx.fillStyle = "#fff"; ctx.fillRect(0,0,cv.width,cv.height);
       if (preview.task) { try{ preview.task.cancel(); }catch(e){} }
-      preview.task = preview.page.render({canvasContext:ctx, viewport:vp});
+      preview.task = page.render({canvasContext:ctx, viewport:vp});
       await preview.task.promise;
       preview.vp = vp;
     } else {
@@ -436,14 +474,17 @@ async function renderPreview(){
       ctx.drawImage(bmp, 0, 0, cv.width, cv.height);
     }
   }catch(e){
-    wrap.style.display = "none"; cap.hidden = true;
+    wrap.style.display = "none"; cap.hidden = true; fullWrap.hidden = true;
     return;
   }
 
   cap.hidden = false;
+  fullWrap.hidden = !(preview.type === "pdf" && boxes.length);
   cap.textContent = preview.type === "pdf"
     ? (boxes.length
-        ? "Le cadre vert entoure l'élément mesuré. S'il n'entoure pas l'annonce, choisissez un autre élément dans la liste."
+        ? (cropped
+            ? "Voici l'élément mesuré, détouré de la page. Si ce n'est pas l'annonce, choisissez un autre élément dans la liste."
+            : "Le cadre vert entoure l'élément mesuré, au milieu de la page entière.")
         : "Aucun élément placé détecté : vérifiez les dimensions à la main.")
     : "Image reçue, mesurée en entier.";
   drawOverlay();
