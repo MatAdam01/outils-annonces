@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mesure d'annonce — colonnes et lignes agates</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{
+  --paper:#FBFAF7; --ink:#1B1F27; --muted:#5E6472; --rule:#D8DADF; --rule2:#ECEDEF;
+  --red:#D2111E; --mes:#1F6F68; --warn:#A9701A; --band:#F1F0EC;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#15181E; --ink:#ECEDF0; --muted:#9AA1AE; --rule:#333942; --rule2:#242932;
+    --red:#FF5A63; --mes:#4FC2B4; --warn:#E0A84B; --band:#1C212A;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#15181E; --ink:#ECEDF0; --muted:#9AA1AE; --rule:#333942; --rule2:#242932;
+  --red:#FF5A63; --mes:#4FC2B4; --warn:#E0A84B; --band:#1C212A;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:Archivo,"Helvetica Neue",Arial,sans-serif;
+  font-size:15px; line-height:1.5; font-variant-numeric:tabular-nums;
+}
+.wrap{max-width:1120px;margin:0 auto;padding:28px 20px 72px}
+header{border-bottom:2px solid var(--ink);padding-bottom:14px;margin-bottom:22px}
+h1{font-size:25px;font-weight:700;letter-spacing:-.02em;margin:0 0 4px}
+header p{margin:0;color:var(--muted);max-width:62ch}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:30px;align-items:start}
+@media (max-width:860px){.cols{grid-template-columns:1fr;gap:24px}}
+
+.drop{
+  border:1.5px dashed var(--rule);border-radius:3px;padding:26px 20px;text-align:center;
+  background:transparent;transition:border-color .15s,background .15s;cursor:pointer
+}
+.drop:hover,.drop.over{border-color:var(--mes);background:var(--band)}
+.drop strong{display:block;font-weight:600;margin-bottom:3px}
+.drop span{color:var(--muted);font-size:13.5px}
+input[type=file]{display:none}
+
+.tests{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+button{font:inherit;color:inherit}
+.chip{
+  background:var(--band);border:1px solid var(--rule);border-radius:2px;
+  padding:5px 10px;font-size:13px;cursor:pointer
+}
+.chip:hover{border-color:var(--mes);color:var(--mes)}
+.chip:focus-visible,.copy:focus-visible,.drop:focus-visible,summary:focus-visible{outline:2px solid var(--mes);outline-offset:2px}
+
+figure{margin:22px 0 0;text-align:center}
+figure svg{max-width:100%;height:auto}
+figcaption{color:var(--muted);font-size:12.5px;margin-top:8px}
+
+.status{margin-top:18px;padding:11px 13px;border-left:3px solid var(--rule);background:var(--band);font-size:14px}
+.status.ok{border-color:var(--mes)}
+.status.warn{border-color:var(--warn)}
+.status.err{border-color:var(--red)}
+
+.measure{margin-top:4px;border-top:1px solid var(--rule);padding-top:16px}
+.measure h2,.panel h2{font-size:12.5px;font-weight:600;margin:0 0 10px;color:var(--muted)}
+.dims{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end}
+.dims label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:3px}
+.dims input{
+  width:106px;font:inherit;font-weight:600;font-size:17px;padding:6px 8px;
+  border:1px solid var(--rule);border-radius:2px;background:transparent;color:inherit
+}
+.dims input:focus{outline:2px solid var(--mes);outline-offset:0;border-color:var(--mes)}
+
+.cand{border:1px solid var(--rule);border-radius:3px;padding:16px 18px;margin-top:14px;position:relative}
+.cand.primary{border-width:2px;border-color:var(--mes)}
+.cand.alt{border-style:dashed;border-color:var(--red)}
+.cand .tag{font-size:12.5px;font-weight:600;color:var(--mes)}
+.cand.alt .tag{color:var(--red)}
+.cand .big{font-size:31px;font-weight:700;letter-spacing:-.025em;margin:5px 0 2px}
+.cand .sub{color:var(--muted);font-size:13.5px}
+.cand .why{font-size:13.5px;margin-top:9px;color:var(--ink)}
+.copy{
+  margin-top:12px;background:var(--mes);color:#fff;border:0;border-radius:2px;
+  padding:7px 13px;font-size:13.5px;font-weight:500;cursor:pointer
+}
+.cand.alt .copy{background:var(--red)}
+.copy:hover{filter:brightness(1.08)}
+
+.list{list-style:none;margin:12px 0 0;padding:0;font-size:13.5px}
+.list li{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--rule2)}
+.list button{background:none;border:0;cursor:pointer;color:var(--mes);font-size:13.5px;padding:0;text-decoration:underline}
+
+details{margin-top:26px;border-top:1px solid var(--rule);padding-top:12px}
+summary{cursor:pointer;font-size:13.5px;font-weight:600;color:var(--muted)}
+.panel{margin-top:14px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.grid2 label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:3px}
+.grid2 input{width:100%;font:inherit;padding:5px 7px;border:1px solid var(--rule);border-radius:2px;background:transparent;color:inherit}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:10px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--rule2)}
+th{color:var(--muted);font-weight:500}
+td.num{text-align:right}
+.note{color:var(--muted);font-size:13px;margin-top:10px;max-width:70ch}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Mesure d'annonce</h1>
+  <p>Déposez un PDF ou une image. L'outil mesure l'annonce, la convertit en colonnes et en lignes agates, et propose la valeur à inscrire dans Airtable.</p>
+</header>
+
+<div class="cols">
+
+  <section>
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choisir un fichier">
+      <strong>Déposer un fichier</strong>
+      <span>PDF, JPEG ou PNG — ou cliquez pour choisir</span>
+    </div>
+    <input type="file" id="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*">
+
+    <figure>
+      <svg id="viz" viewBox="0 0 320 420" role="img" aria-label="Position de l'annonce dans la grille de la page"></svg>
+      <figcaption id="vizcap">Grille de la page : 5 colonnes, 277 lignes agates.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="status" id="status">Aucun fichier mesuré pour l'instant.</div>
+
+    <div class="measure">
+      <h2>Dimensions mesurées, en pouces</h2>
+      <div class="dims">
+        <div>
+          <label for="w">Largeur</label>
+          <input id="w" type="number" step="0.001" value="0">
+        </div>
+        <div>
+          <label for="h">Hauteur</label>
+          <input id="h" type="number" step="0.001" value="0">
+        </div>
+      </div>
+      <p class="note">Corrigez une valeur et tout se recalcule.</p>
+      <ul class="list" id="cands"></ul>
+    </div>
+
+    <div id="out"></div>
+  </section>
+</div>
+
+<details>
+  <summary>Carte des dimensions et réglages</summary>
+  <div class="panel">
+    <h2>Réglages</h2>
+    <div class="grid2">
+      <div><label for="agate">Lignes agates par pouce</label><input id="agate" type="number" step="0.01" value="14"></div>
+      <div><label for="maxl">Hauteur maximale, en lignes</label><input id="maxl" type="number" step="1" value="277"></div>
+      <div><label for="tol">Tolérance de largeur, en pouces</label><input id="tol" type="number" step="0.001" value="0.0625"></div>
+      <div><label for="tarif">Tarif par unité, en dollars</label><input id="tarif" type="number" step="0.01" value="0.85"></div>
+    </div>
+    <h2 style="margin-top:18px">Largeurs de colonnes</h2>
+    <div class="grid2" id="colw"></div>
+    <p class="note">Ces largeurs viennent de la carte des formats. La 5 colonnes y figure à 10,5027 po alors que la progression des autres paliers donnerait 10,489 po : écart à confirmer avec la production.</p>
+
+    <h2 style="margin-top:22px">Cas de référence</h2>
+    <table>
+      <thead><tr><th>Épreuve</th><th class="num">Mesuré</th><th class="num">Lignes calculées</th><th class="num">Facturé</th></tr></thead>
+      <tbody>
+        <tr><td>Épreuve A</td><td class="num">4,093 × 8,927</td><td class="num">124,98</td><td class="num">2 × 125</td></tr>
+        <tr><td>Épreuve B</td><td class="num">4,083 × 6,030</td><td class="num">84,42</td><td class="num">2 × 85</td></tr>
+        <tr><td>Épreuve C</td><td class="num">4,119 × 8,823</td><td class="num">123,50</td><td class="num">2 × 125</td></tr>
+      </tbody>
+    </table>
+    <p class="note">Un seul des trois tombe pile. L'artwork n'est pas toujours construit à la taille vendue : c'est pourquoi l'outil affiche deux candidats au lieu d'un verdict.</p>
+  </div>
+</details>
+
+</div>
+
+<script>
+window.TESTS={};
+</script>
+
+<script>
+const OPS = (window.pdfjsLib && pdfjsLib.OPS) || {};
+if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+const COLS_DEFAULT = [1.961, 4.093, 6.2249, 8.3569, 10.5027];
+const CARTE = [
+  {b:"Carte d'affaire", c:2, l:45},  {b:"Carte d'affaire", c:1, l:90},
+  {b:"1/8 page", c:2, l:84}, {b:"1/8 page", c:3, l:55}, {b:"1/8 page", c:4, l:41},
+  {b:"1/8 page", c:5, l:33}, {b:"1/8 page", c:1, l:167},
+  {b:"1/6 page", c:1, l:252}, {b:"1/6 page", c:2, l:125}, {b:"1/6 page", c:3, l:84},
+  {b:"1/6 page", c:4, l:63}, {b:"1/6 page", c:5, l:50},
+  {b:"1/4 page", c:2, l:167}, {b:"1/4 page", c:3, l:111}, {b:"1/4 page", c:4, l:84},
+  {b:"1/4 page", c:5, l:67},
+  {b:"1/3 page", c:2, l:232}, {b:"1/3 page", c:3, l:155}, {b:"1/3 page", c:4, l:116},
+  {b:"1/3 page", c:5, l:93},
+  {b:"1/2 page", c:3, l:225}, {b:"1/2 page", c:4, l:167}, {b:"1/2 page", c:5, l:135},
+  {b:"Pleine page", c:5, l:277}
+];
+// Surfaces de référence de la table Formats (moyennes), utilisées par le script couleur OBNL.
+const BUCKETS = [
+  {n:"1/8 page",s:166},{n:"1/6 page",s:251},{n:"1/4 page",s:335},
+  {n:"1/3 page",s:465},{n:"1/2 page",s:673},{n:"Pleine page",s:1385}
+];
+
+const $ = id => document.getElementById(id);
+let colW = COLS_DEFAULT.slice();
+let boxes = [];        // boîtes détectées dans le fichier
+let proofRead = null;  // valeurs lues sur une épreuve
+
+// ---------- réglages ----------
+function buildColInputs(){
+  $("colw").innerHTML = colW.map((v,i)=>
+    `<div><label for="cw${i}">${i+1} colonne${i?"s":""}</label>
+     <input id="cw${i}" type="number" step="0.0001" value="${v}"></div>`).join("");
+  colW.forEach((_,i)=> $("cw"+i).addEventListener("input", ()=>{
+    colW[i] = parseFloat($("cw"+i).value)||colW[i]; compute();
+  }));
+}
+buildColInputs();
+["agate","maxl","tol","tarif","w","h"].forEach(id=> $(id).addEventListener("input", compute));
+
+// ---------- géométrie PDF ----------
+function mul(a,b){
+  return [a[0]*b[0]+a[2]*b[1], a[1]*b[0]+a[3]*b[1],
+          a[0]*b[2]+a[2]*b[3], a[1]*b[2]+a[3]*b[3],
+          a[0]*b[4]+a[2]*b[5]+a[4], a[1]*b[4]+a[3]*b[5]+a[5]];
+}
+function unitBox(m){
+  const pts = [[0,0],[1,0],[0,1],[1,1]].map(([x,y])=>[m[0]*x+m[2]*y+m[4], m[1]*x+m[3]*y+m[5]]);
+  const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
+  return {w:(Math.max(...xs)-Math.min(...xs))/72, h:(Math.max(...ys)-Math.min(...ys))/72};
+}
+
+async function readPdf(buf){
+  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  const page = await pdf.getPage(1);
+  const vp = page.getViewport({scale:1});
+  const pageSize = {w:vp.width/72, h:vp.height/72};
+
+  // 1 — épreuve : les valeurs sont déjà écrites dans le bandeau
+  proofRead = null;
+  try{
+    const tc = await page.getTextContent();
+    const txt = tc.items.map(i=>i.str).join(" ").replace(/\s+/g," ");
+    const m = txt.match(/Col\.?[^0-9]{0,60}?Rate\s*(\d{1,2})\s+(\d{1,3})\b/i);
+    if (m) proofRead = {c:+m[1], l:+m[2]};
+  }catch(e){}
+
+  // 2 — boîtes des éléments placés
+  const ol = await page.getOperatorList();
+  let ctm=[1,0,0,1,0,0]; const stack=[]; const found=[];
+  const paints = [OPS.paintImageXObject, OPS.paintImageMaskXObject,
+                  OPS.paintJpegXObject, OPS.paintInlineImageXObject].filter(v=>v!==undefined);
+  for (let i=0;i<ol.fnArray.length;i++){
+    const fn = ol.fnArray[i], a = ol.argsArray[i];
+    if (fn===OPS.save){ stack.push(ctm.slice()); }
+    else if (fn===OPS.restore){ ctm = stack.pop() || [1,0,0,1,0,0]; }
+    else if (fn===OPS.transform){ ctm = mul(ctm, a); }
+    else if (fn===OPS.paintFormXObjectBegin){ stack.push(ctm.slice()); ctm = mul(ctm, a[0]); }
+    else if (fn===OPS.paintFormXObjectEnd){ ctm = stack.pop() || [1,0,0,1,0,0]; }
+    else if (paints.includes(fn)){
+      const b = unitBox(ctm);
+      if (b.w>0.5 && b.h>0.5) found.push(b);
+    }
+  }
+  found.sort((x,y)=> y.w*y.h - x.w*x.h);
+  return {pageSize, found};
+}
+
+// ---------- images ----------
+function imgDensity(buf, type){
+  const d = new DataView(buf);
+  try{
+    if (type.includes("png")){
+      let o = 8;
+      while (o < d.byteLength-8){
+        const len = d.getUint32(o);
+        const tag = String.fromCharCode(d.getUint8(o+4),d.getUint8(o+5),d.getUint8(o+6),d.getUint8(o+7));
+        if (tag==="pHYs"){
+          const px = d.getUint32(o+8), py = d.getUint32(o+12), unit = d.getUint8(o+16);
+          if (unit===1) return {x:px*0.0254, y:py*0.0254, src:"pHYs"};
+        }
+        o += 12+len;
+      }
+    } else {
+      let o = 2;
+      while (o < d.byteLength-4){
+        if (d.getUint8(o)!==0xFF) { o++; continue; }
+        const mk = d.getUint8(o+1), len = d.getUint16(o+2);
+        if (mk===0xE0){
+          const unit = d.getUint8(o+11), xd = d.getUint16(o+12), yd = d.getUint16(o+14);
+          if (unit===1 && xd>1) return {x:xd, y:yd||xd, src:"JFIF"};
+          if (unit===2 && xd>1) return {x:xd*2.54, y:(yd||xd)*2.54, src:"JFIF cm"};
+        }
+        if (mk===0xDA) break;
+        o += 2+len;
+      }
+    }
+  }catch(e){}
+  return null;
+}
+
+async function readImage(file, buf){
+  const bmp = await createImageBitmap(new Blob([buf],{type:file.type}));
+  const dens = imgDensity(buf, file.type||"");
+  const dpi = dens ? dens.x : 300;
+  return {
+    px:{w:bmp.width,h:bmp.height}, dpi, assumed:!dens,
+    box:{w:bmp.width/dpi, h:bmp.height/(dens?dens.y:dpi)}
+  };
+}
+
+// ---------- traitement ----------
+async function handle(file, buf){
+  setStatus("Lecture de " + file.name + "…", "");
+  boxes = []; proofRead = null;
+  try{
+    if ((file.type||"").includes("pdf") || /\.pdf$/i.test(file.name)){
+      const r = await readPdf(buf);
+      boxes = r.found;
+      if (proofRead){
+        const li = proofRead.l, ci = proofRead.c;
+        $("w").value = (colW[ci-1]||0).toFixed(3);
+        $("h").value = (li/(parseFloat($("agate").value)||14)).toFixed(3);
+        setStatus(`Épreuve La Liberté reconnue : le bandeau indique ${ci} colonne${ci>1?"s":""} × ${li} ligne${li>1?"s":""}. Valeurs reprises telles quelles.`, "ok");
+      } else if (boxes.length){
+        $("w").value = boxes[0].w.toFixed(3);
+        $("h").value = boxes[0].h.toFixed(3);
+        setStatus(`${boxes.length} élément${boxes.length>1?"s":""} placé${boxes.length>1?"s":""} détecté${boxes.length>1?"s":""}. Le plus grand est retenu — page de ${r.pageSize.w.toFixed(2)} × ${r.pageSize.h.toFixed(2)} po.`, "ok");
+      } else {
+        $("w").value = r.pageSize.w.toFixed(3);
+        $("h").value = r.pageSize.h.toFixed(3);
+        setStatus("Aucun élément placé détecté : ce sont les dimensions de la page entière qui s'affichent. Vérifiez-les avant de vous en servir.", "warn");
+      }
+    } else {
+      const r = await readImage(file, buf);
+      $("w").value = r.box.w.toFixed(3);
+      $("h").value = r.box.h.toFixed(3);
+      setStatus(r.assumed
+        ? `Image de ${r.px.w} × ${r.px.h} pixels, sans résolution inscrite dans le fichier. Le calcul suppose 300 ppp — à confirmer auprès du client avant de facturer.`
+        : `Image de ${r.px.w} × ${r.px.h} pixels à ${Math.round(r.dpi)} ppp.`,
+        r.assumed ? "warn" : "ok");
+    }
+  }catch(err){
+    setStatus("Lecture impossible : " + err.message, "err");
+  }
+  renderCands();
+  compute();
+}
+
+function setStatus(msg, kind){
+  const s = $("status"); s.textContent = msg; s.className = "status" + (kind?" "+kind:"");
+}
+function renderCands(){
+  const el = $("cands");
+  if (!boxes.length){ el.innerHTML = ""; return; }
+  el.innerHTML = "<li style='border:0;color:var(--muted);padding-bottom:2px'>Éléments mesurés dans le fichier</li>" +
+    boxes.slice(0,6).map((b,i)=>
+      `<li><span>${b.w.toFixed(3)} × ${b.h.toFixed(3)} po</span>
+       <button data-box="${i}">Utiliser</button></li>`).join("");
+  el.querySelectorAll("button").forEach(btn=> btn.addEventListener("click", ()=>{
+    const b = boxes[+btn.dataset.box];
+    $("w").value = b.w.toFixed(3); $("h").value = b.h.toFixed(3); compute();
+  }));
+}
+
+// ---------- calcul ----------
+function compute(){
+  const w = parseFloat($("w").value)||0, h = parseFloat($("h").value)||0;
+  const perInch = parseFloat($("agate").value)||14;
+  const maxL = parseInt($("maxl").value)||277;
+  const tol = parseFloat($("tol").value)||0.0625;
+  const tarif = parseFloat($("tarif").value)||0;
+
+  if (!w || !h){ $("out").innerHTML = ""; draw(0,0,null); return; }
+
+  let ci = 0, best = Infinity;
+  colW.forEach((cw,i)=>{ const d = Math.abs(w-cw); if (d<best){best=d; ci=i+1;} });
+  const ecart = w - colW[ci-1];
+  const hors = Math.abs(ecart) > tol;
+
+  const exact = h * perInch;
+  const lignes = Math.min(maxL, Math.max(1, Math.ceil(exact - 1e-9)));
+
+  const sameCol = CARTE.filter(f=>f.c===ci);
+  let std = null;
+  if (sameCol.length){
+    std = sameCol.reduce((a,b)=> Math.abs(b.l-exact) < Math.abs(a.l-exact) ? b : a);
+  }
+
+  const surface = ci * lignes;
+  const bucket = BUCKETS.reduce((a,b)=> Math.abs(b.s-surface) < Math.abs(a.s-surface) ? b : a);
+
+  const prixA = ci * lignes * tarif;
+  const prixB = std ? ci * std.l * tarif : null;
+
+  const warn = hors
+    ? `<p class="why" style="color:var(--warn)">Largeur à ${ecart>0?"+":""}${ecart.toFixed(3)} po de la ${ci} colonne${ci>1?"s":""} : hors tolérance. Le fichier est probablement mal exporté — à vérifier avant de facturer.</p>`
+    : "";
+
+  let html = `
+  <div class="cand primary">
+    <div class="tag">Surface réelle, arrondie à la ligne supérieure</div>
+    <div class="big">${ci} col × ${lignes} lignes</div>
+    <div class="sub">${exact.toFixed(2)} lignes mesurées · surface ${surface} · ${prixA.toFixed(2)} $ avant suppléments</div>
+    ${warn}
+    <button class="copy" data-c="${ci}" data-l="${lignes}">Copier pour Airtable</button>
+  </div>`;
+
+  if (std && std.l !== lignes){
+    const d = (prixB - prixA);
+    html += `
+    <div class="cand alt">
+      <div class="tag">Format standard le plus proche — ${std.b}</div>
+      <div class="big">${std.c} col × ${std.l} lignes</div>
+      <div class="sub">${Math.abs(std.l-lignes)} ligne${Math.abs(std.l-lignes)>1?"s":""} d'écart · ${prixB.toFixed(2)} $ · ${d>0?"+":""}${d.toFixed(2)} $</div>
+      <p class="why">L'annonce ne tombe pas sur un format de la carte. Si elle a été vendue à un format standard, c'est cette valeur qu'il faut inscrire.</p>
+      <button class="copy" data-c="${std.c}" data-l="${std.l}">Copier pour Airtable</button>
+    </div>`;
+  } else if (std){
+    html += `<p class="note">Correspond exactement au format ${std.b} de la carte.</p>`;
+  }
+
+  html += `<p class="note">Pour le tarif couleur d'un OBNL local, le script Airtable rattache cette surface au format « ${bucket.n} ».</p>`;
+
+  $("out").innerHTML = html;
+  $("out").querySelectorAll(".copy").forEach(b=> b.addEventListener("click", ()=>{
+    navigator.clipboard.writeText(`${b.dataset.c}\t${b.dataset.l}`).then(()=>{
+      const t = b.textContent; b.textContent = "Copié : " + b.dataset.c + " et " + b.dataset.l;
+      setTimeout(()=> b.textContent = t, 1800);
+    });
+  }));
+
+  draw(ci, lignes, std && std.l !== lignes ? std : null);
+}
+
+// ---------- dessin ----------
+function draw(ci, lignes, std){
+  const maxL = parseInt($("maxl").value)||277;
+  const W = 320, H = 420, pad = 10;
+  const pw = W - pad*2, ph = H - pad*2;
+  const gut = 2;
+  const cw = (pw - gut*4)/5;
+  let s = `<rect x="${pad-3}" y="${pad-3}" width="${pw+6}" height="${ph+6}" fill="none" stroke="var(--rule)" stroke-width="1"/>`;
+  for (let i=0;i<5;i++){
+    s += `<rect x="${pad+i*(cw+gut)}" y="${pad}" width="${cw}" height="${ph}" fill="var(--band)"/>`;
+  }
+  if (ci && lignes){
+    const bw = ci*cw + (ci-1)*gut;
+    const bh = Math.max(2, ph * Math.min(1, lignes/maxL));
+    if (std){
+      const sh = Math.max(2, ph * Math.min(1, std.l/maxL));
+      s += `<rect x="${pad}" y="${pad}" width="${bw}" height="${sh}" fill="none" stroke="var(--red)" stroke-width="1.5" stroke-dasharray="5 3"/>`;
+    }
+    s += `<rect x="${pad}" y="${pad}" width="${bw}" height="${bh}" fill="var(--mes)" fill-opacity="0.16" stroke="var(--mes)" stroke-width="2"/>`;
+  }
+  $("viz").innerHTML = s;
+  $("vizcap").textContent = ci
+    ? `Trait plein : surface réelle. ${std ? "Tirets : format standard le plus proche." : "Page de 5 colonnes sur " + maxL + " lignes."}`
+    : `Grille de la page : 5 colonnes, ${maxL} lignes agates.`;
+}
+draw(0,0,null);
+
+// ---------- entrées ----------
+const drop = $("drop"), fileEl = $("file");
+drop.addEventListener("click", ()=> fileEl.click());
+drop.addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();fileEl.click();} });
+drop.addEventListener("dragover", e=>{ e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", ()=> drop.classList.remove("over"));
+drop.addEventListener("drop", e=>{
+  e.preventDefault(); drop.classList.remove("over");
+  const f = e.dataTransfer.files[0]; if (f) f.arrayBuffer().then(b=> handle(f,b));
+});
+fileEl.addEventListener("change", ()=>{
+  const f = fileEl.files[0]; if (f) f.arrayBuffer().then(b=> handle(f,b));
+});
+
+document.querySelectorAll("[data-test]").forEach(btn=> btn.addEventListener("click", ()=>{
+  const t = window.TESTS && window.TESTS[btn.dataset.test];
+  if (!t){ setStatus("Le fichier d'essai n'est pas disponible.", "err"); return; }
+  const bin = atob(t.b64); const arr = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+  handle({name:t.name, type:"application/pdf"}, arr.buffer);
+}));
+</script>
+</body>
+</html>
