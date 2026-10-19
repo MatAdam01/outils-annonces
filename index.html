@@ -176,7 +176,6 @@ td.num{text-align:right}
     <div class="grid2">
       <div><label for="agate">Lignes agates par pouce</label><input id="agate" type="number" step="0.01" value="14"></div>
       <div><label for="maxl">Hauteur maximale, en lignes</label><input id="maxl" type="number" step="1" value="277"></div>
-      <div><label for="tol">Tolérance de largeur, en pouces</label><input id="tol" type="number" step="0.001" value="0.0625"></div>
       <div><label for="tarifSel">Tarif par unité</label>
         <select id="tarifSel">
           <option value="0.85">Annonce — Local — 0,85 $</option>
@@ -193,7 +192,7 @@ td.num{text-align:right}
     <h2 style="margin-top:22px">Comment le calcul est posé</h2>
     <p class="note">La ligne agate vaut un quatorzième de pouce. Vérifié sur les 24 formats de la carte : l'écart maximal y est d'une demi-ligne, ce qui correspond à l'arrondi des dimensions imprimées, pas à une autre unité.</p>
     <p class="note">La hauteur mesurée est multipliée par 14, puis arrondie à la ligne supérieure. Un dépassement de quelques centièmes de pouce — trait de coupe, fond perdu — est absorbé au lieu d'être facturé comme une ligne de plus.</p>
-    <p class="note">La largeur ne s'arrondit pas : seules les cinq largeurs de la carte existent. L'outil retient la plus proche et signale l'écart s'il dépasse la tolérance, au lieu d'inventer une valeur intermédiaire.</p>
+    <p class="note">La largeur ne s'arrondit pas : seules les cinq largeurs de la carte existent. L'outil retient la plus proche, et prévient quand le fichier s'en écarte de plus d'un seizième de pouce — signe d'un mauvais export plutôt que d'un autre format.</p>
   </div>
 </details>
 
@@ -245,7 +244,7 @@ function buildColInputs(){
   }));
 }
 buildColInputs();
-["agate","maxl","tol","tarifSel","w","h"].forEach(id=> $(id).addEventListener("input", compute));
+["agate","maxl","tarifSel","w","h"].forEach(id=> $(id).addEventListener("input", compute));
 $("tarifSel").addEventListener("change", compute);
 
 // ---------- géométrie PDF ----------
@@ -512,7 +511,9 @@ function compute(){
   const w = parseFloat($("w").value)||0, h = parseFloat($("h").value)||0;
   const perInch = parseFloat($("agate").value)||14;
   const maxL = parseInt($("maxl").value)||277;
-  const tol = parseFloat($("tol").value)||0.0625;
+  // Seuil d'avertissement sur la largeur : 1/16 po. Ne change pas le nombre de
+  // colonnes retenu, signale seulement un fichier qui s'écarte de la carte.
+  const tol = 0.0625;
   // Marge de mesure : 0,1 ligne (~0,007 po). Absorbe un trait de coupe ou un
   // fond perdu, sans empêcher un vrai dépassement de monter d'une ligne.
   const noise = 0.1;
