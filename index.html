@@ -107,7 +107,8 @@ summary{cursor:pointer;font-size:13.5px;font-weight:600;color:var(--muted)}
 .panel{margin-top:14px}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
 .grid2 label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:3px}
-.grid2 input{width:100%;font:inherit;padding:5px 7px;border:1px solid var(--rule);border-radius:2px;background:transparent;color:inherit}
+.grid2 input,.grid2 select{width:100%;font:inherit;padding:5px 7px;border:1px solid var(--rule);border-radius:2px;background:transparent;color:inherit}
+.grid2 select{appearance:none;background:var(--band)}
 table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:10px}
 th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--rule2)}
 th{color:var(--muted);font-weight:500}
@@ -176,22 +177,24 @@ td.num{text-align:right}
       <div><label for="agate">Lignes agates par pouce</label><input id="agate" type="number" step="0.01" value="14"></div>
       <div><label for="maxl">Hauteur maximale, en lignes</label><input id="maxl" type="number" step="1" value="277"></div>
       <div><label for="tol">Tolérance de largeur, en pouces</label><input id="tol" type="number" step="0.001" value="0.0625"></div>
-      <div><label for="tarif">Tarif par unité, en dollars</label><input id="tarif" type="number" step="0.01" value="0.85"></div>
+      <div><label for="eps">Seuil de bruit, en lignes</label><input id="eps" type="number" step="0.01" value="0.1"></div>
+      <div><label for="tarifSel">Tarif par unité</label>
+        <select id="tarifSel">
+          <option value="0.85">Annonce — Local — 0,85 $</option>
+          <option value="1.75">Annonce — National — 1,75 $</option>
+          <option value="0.65">À votre service — 0,65 $</option>
+          <option value="0.75">Nécrologie — 0,75 $</option>
+        </select>
+      </div>
     </div>
     <h2 style="margin-top:18px">Largeurs de colonnes</h2>
     <div class="grid2" id="colw"></div>
     <p class="note">Ces largeurs viennent de la carte des formats. La 5 colonnes y figure à 10,5027 po alors que la progression des autres paliers donnerait 10,489 po : écart à confirmer avec la production.</p>
 
-    <h2 style="margin-top:22px">Cas de référence</h2>
-    <table>
-      <thead><tr><th>Épreuve</th><th class="num">Mesuré</th><th class="num">Lignes calculées</th><th class="num">Facturé</th></tr></thead>
-      <tbody>
-        <tr><td>Épreuve A</td><td class="num">4,093 × 8,927</td><td class="num">124,98</td><td class="num">2 × 125</td></tr>
-        <tr><td>Épreuve B</td><td class="num">4,083 × 6,030</td><td class="num">84,42</td><td class="num">2 × 85</td></tr>
-        <tr><td>Épreuve C</td><td class="num">4,119 × 8,823</td><td class="num">123,50</td><td class="num">2 × 125</td></tr>
-      </tbody>
-    </table>
-    <p class="note">Un seul des trois tombe pile. L'artwork n'est pas toujours construit à la taille vendue : c'est pourquoi l'outil affiche deux candidats au lieu d'un verdict.</p>
+    <h2 style="margin-top:22px">Comment le calcul est posé</h2>
+    <p class="note">La ligne agate vaut un quatorzième de pouce. Vérifié sur les 24 formats de la carte : l'écart maximal y est d'une demi-ligne, ce qui correspond à l'arrondi des dimensions imprimées, pas à une autre unité.</p>
+    <p class="note">La hauteur mesurée est multipliée par 14, puis arrondie à la ligne supérieure après retrait du seuil de bruit. Sans ce seuil, un trait de coupe ou un fond perdu de quelques centièmes de pouce suffirait à facturer une ligne de trop.</p>
+    <p class="note">La largeur ne s'arrondit pas : seules les cinq largeurs de la carte existent. L'outil retient la plus proche et signale l'écart s'il dépasse la tolérance, au lieu d'inventer une valeur intermédiaire.</p>
   </div>
 </details>
 
@@ -243,7 +246,8 @@ function buildColInputs(){
   }));
 }
 buildColInputs();
-["agate","maxl","tol","tarif","w","h"].forEach(id=> $(id).addEventListener("input", compute));
+["agate","maxl","tol","eps","tarifSel","w","h"].forEach(id=> $(id).addEventListener("input", compute));
+$("tarifSel").addEventListener("change", compute);
 
 // ---------- géométrie PDF ----------
 function mul(a,b){
@@ -483,7 +487,9 @@ function compute(){
   const perInch = parseFloat($("agate").value)||14;
   const maxL = parseInt($("maxl").value)||277;
   const tol = parseFloat($("tol").value)||0.0625;
-  const tarif = parseFloat($("tarif").value)||0;
+  const epsV = parseFloat($("eps").value);
+  const noise = isNaN(epsV) ? 0 : Math.max(0, epsV);
+  const tarif = parseFloat($("tarifSel").value)||0;
 
   if (!w || !h){ $("out").innerHTML = ""; draw(0,0,null); return; }
 
@@ -493,7 +499,7 @@ function compute(){
   const hors = Math.abs(ecart) > tol;
 
   const exact = h * perInch;
-  const lignes = Math.min(maxL, Math.max(1, Math.ceil(exact - 1e-9)));
+  const lignes = Math.min(maxL, Math.max(1, Math.ceil(exact - noise)));
 
   const sameCol = CARTE.filter(f=>f.c===ci);
   let std = null;
@@ -515,7 +521,8 @@ function compute(){
   <div class="cand primary">
     <div class="tag">Surface réelle, arrondie à la ligne supérieure</div>
     <div class="big">${ci} col × ${lignes} lignes</div>
-    <div class="sub">${exact.toFixed(2)} lignes mesurées · surface ${surface} · ${prixA.toFixed(2)} $ avant suppléments</div>
+    <div class="sub">${h.toFixed(3)} po × ${perInch} = ${exact.toFixed(2)} lignes, arrondi à ${lignes}</div>
+    <div class="sub">${ci} × ${lignes} = ${surface} unités × ${tarif.toFixed(2)} $ = ${prixA.toFixed(2)} $ avant suppléments</div>
     ${warn}
   </div>`;
 
@@ -525,7 +532,8 @@ function compute(){
     <div class="cand alt">
       <div class="tag">Format standard le plus proche — ${std.b}</div>
       <div class="big">${std.c} col × ${std.l} lignes</div>
-      <div class="sub">${Math.abs(std.l-lignes)} ligne${Math.abs(std.l-lignes)>1?"s":""} d'écart · ${prixB.toFixed(2)} $ · ${d>0?"+":""}${d.toFixed(2)} $</div>
+      <div class="sub">${std.c} × ${std.l} = ${std.c*std.l} unités × ${tarif.toFixed(2)} $ = ${prixB.toFixed(2)} $</div>
+      <div class="sub">${Math.abs(std.l-lignes)} ligne${Math.abs(std.l-lignes)>1?"s":""} d'écart, soit ${d>0?"+":""}${d.toFixed(2)} $</div>
       <p class="why">L'annonce ne tombe pas sur un format de la carte. Si elle a été vendue à un format standard, c'est cette valeur qu'il faut retenir.</p>
     </div>`;
   } else if (std){
