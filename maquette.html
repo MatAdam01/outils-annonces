@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Annonce dans la maquette</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{
+  --paper:#FBFAF7; --ink:#1B1F27; --muted:#5E6472; --rule:#D8DADF; --rule2:#ECEDEF;
+  --red:#D2111E; --mes:#1F6F68; --warn:#A9701A; --band:#F1F0EC; --page:#FFFFFF; --col:#F4F3EF;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#15181E; --ink:#ECEDF0; --muted:#9AA1AE; --rule:#333942; --rule2:#242932;
+    --red:#FF5A63; --mes:#4FC2B4; --warn:#E0A84B; --band:#1C212A; --page:#20242C; --col:#262B34;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#15181E; --ink:#ECEDF0; --muted:#9AA1AE; --rule:#333942; --rule2:#242932;
+  --red:#FF5A63; --mes:#4FC2B4; --warn:#E0A84B; --band:#1C212A; --page:#20242C; --col:#262B34;
+}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:Archivo,"Helvetica Neue",Arial,sans-serif;
+  font-size:15px;line-height:1.5;font-variant-numeric:tabular-nums;
+}
+.wrap{max-width:1080px;margin:0 auto;padding:28px 20px 72px}
+header{border-bottom:2px solid var(--ink);padding-bottom:14px;margin-bottom:22px}
+h1{font-size:25px;font-weight:700;letter-spacing:-.02em;margin:0 0 4px}
+header p{margin:0;color:var(--muted);max-width:64ch}
+
+.cols{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:32px;align-items:start}
+@media (max-width:820px){.cols{grid-template-columns:1fr;gap:24px}}
+
+.drop{
+  border:1.5px dashed var(--rule);border-radius:3px;padding:18px 16px;text-align:center;
+  transition:border-color .15s,background .15s;cursor:pointer;margin-bottom:18px
+}
+.drop:hover,.drop.over{border-color:var(--mes);background:var(--band)}
+.drop strong{display:block;font-weight:600;font-size:14.5px}
+.drop span{color:var(--muted);font-size:13px}
+input[type=file]{display:none}
+
+#stage{display:block;margin:0 auto;touch-action:none;cursor:default}
+.stagecap{color:var(--muted);font-size:12.5px;text-align:center;margin:10px 0 0;line-height:1.5}
+
+h2{font-size:12.5px;font-weight:600;margin:0 0 10px;color:var(--muted)}
+.block{border-top:1px solid var(--rule);padding-top:16px;margin-top:20px}
+.block:first-child{border-top:0;padding-top:0;margin-top:0}
+
+.size{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.size label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:3px}
+.size input,.size select{
+  font:inherit;font-weight:600;font-size:16px;padding:6px 8px;
+  border:1px solid var(--rule);border-radius:2px;background:transparent;color:inherit
+}
+.size select{background:var(--band);appearance:none;font-weight:600}
+.size input{width:92px}
+.size input:focus,.size select:focus,.drop:focus-visible,button:focus-visible,
+input[type=range]:focus-visible{outline:2px solid var(--mes);outline-offset:1px}
+
+.opts{display:grid;gap:11px;margin-top:4px}
+.opts label{font-size:13.5px;display:flex;align-items:center;gap:7px;color:var(--ink)}
+.opts .row{display:flex;align-items:center;gap:10px}
+.opts .row > span{font-size:12.5px;color:var(--muted);min-width:96px}
+.opts select{font:inherit;font-size:13.5px;padding:4px 7px;border:1px solid var(--rule);
+  border-radius:2px;background:var(--band);color:inherit}
+input[type=range]{flex:1;min-width:0;accent-color:var(--mes)}
+.pct{font-size:13px;color:var(--muted);min-width:44px;text-align:right}
+
+.read{border:2px solid var(--mes);border-radius:3px;padding:16px 18px;margin-top:20px}
+.read .big{font-size:30px;font-weight:700;letter-spacing:-.025em;margin:0 0 3px}
+.read .sub{color:var(--muted);font-size:13.5px}
+.read .sub + .sub{margin-top:2px}
+
+.flag{font-size:13.5px;margin-top:12px;padding:9px 12px;border-left:3px solid var(--warn);background:var(--band)}
+.flag.ok{border-color:var(--mes)}
+
+button.ghost{
+  font:inherit;font-size:13.5px;background:none;border:1px solid var(--rule);
+  border-radius:2px;padding:6px 11px;cursor:pointer;color:inherit
+}
+button.ghost:hover{border-color:var(--mes);color:var(--mes)}
+button.ghost[disabled]{opacity:.45;cursor:default}
+button.ghost[disabled]:hover{border-color:var(--rule);color:inherit}
+
+.note{color:var(--muted);font-size:13px;margin-top:12px;max-width:62ch}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Annonce dans la maquette</h1>
+  <p>Déposez un fichier, puis tirez le coin pour choisir la taille vendue. La largeur saute d'une colonne à l'autre, la hauteur se compte en lignes agates.</p>
+</header>
+
+<div class="cols">
+
+  <section>
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choisir un fichier">
+      <strong>Déposer un fichier</strong>
+      <span>PDF, JPEG ou PNG</span>
+    </div>
+    <input type="file" id="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*">
+
+    <canvas id="stage" aria-label="Page du journal avec l'annonce placée"></canvas>
+    <p class="stagecap" id="stagecap">Tirez le coin inférieur droit du cadre.</p>
+  </section>
+
+  <section>
+    <div class="block">
+      <h2>Taille vendue</h2>
+      <div class="size">
+        <div>
+          <label for="cols">Colonnes</label>
+          <select id="cols">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+        </div>
+        <div>
+          <label for="lines">Lignes agates</label>
+          <input id="lines" type="number" min="1" max="277" step="1" value="125">
+        </div>
+        <button class="ghost" id="reset" disabled>Taille du fichier</button>
+      </div>
+      <div id="fmt" class="note"></div>
+    </div>
+
+    <div class="block">
+      <h2>Image dans le cadre</h2>
+      <div class="opts">
+        <div class="row">
+          <span>Cadrage</span>
+          <select id="fit">
+            <option value="contain" selected>Entière, marges si besoin</option>
+            <option value="cover">Remplit, déborde rogné</option>
+            <option value="stretch">Étirée au cadre</option>
+          </select>
+        </div>
+        <div class="row">
+          <span>Échelle</span>
+          <input id="zoom" type="range" min="50" max="200" step="1" value="100">
+          <span class="pct" id="zoompct">100 %</span>
+        </div>
+        <label><input type="checkbox" id="lock" checked> Conserver les proportions du fichier</label>
+      </div>
+    </div>
+
+    <div class="read">
+      <div class="big" id="big">2 cols × 125 lignes</div>
+      <div class="sub" id="sub1"></div>
+      <div class="sub" id="sub2"></div>
+    </div>
+
+    <div id="flag"></div>
+
+    <div class="block">
+      <h2>Tarif par unité</h2>
+      <div class="opts">
+        <div class="row">
+          <span>Type et marché</span>
+          <select id="tarif">
+            <option value="0.85" selected>Annonce — Local — 0,85 $</option>
+            <option value="1.75">Annonce — National — 1,75 $</option>
+            <option value="0.65">À votre service — 0,65 $</option>
+            <option value="0.75">Nécrologie — 0,75 $</option>
+          </select>
+        </div>
+      </div>
+      <p class="note">Prix avant suppléments, rabais et taxes.</p>
+    </div>
+  </section>
+</div>
+
+</div>
+
+<script>
+const OPS = (window.pdfjsLib && pdfjsLib.OPS) || {};
+if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+// Carte des formats — largeurs en pouces, ligne agate = 1/14 de pouce.
+const COLW  = [1.961, 4.093, 6.2249, 8.3569, 10.5027];
+const AGATE = 14;
+const MAXL  = 277;
+const PW    = COLW[4];        // largeur de page
+const PH    = MAXL / AGATE;   // hauteur de page
+
+const CARTE = [
+  ["Carte d'affaire",1,90],["Carte d'affaire",2,45],
+  ["1/8 page",1,167],["1/8 page",2,84],["1/8 page",3,55],["1/8 page",4,41],["1/8 page",5,33],
+  ["1/6 page",1,252],["1/6 page",2,125],["1/6 page",3,84],["1/6 page",4,63],["1/6 page",5,50],
+  ["1/4 page",2,167],["1/4 page",3,111],["1/4 page",4,84],["1/4 page",5,67],
+  ["1/3 page",2,232],["1/3 page",3,155],["1/3 page",4,116],["1/3 page",5,93],
+  ["1/2 page",3,225],["1/2 page",4,167],["1/2 page",5,135],
+  ["Pleine page",5,277]
+];
+
+const $ = id => document.getElementById(id);
+
+let art = null;      // {canvas, wIn, hIn, name}
+let cols = 2, lines = 125;
+let drag = null;     // état du glissement
+let geo  = null;     // géométrie du dessin, pour le test de contact
+
+// ---------- lecture des fichiers ----------
+function mul(a,b){
+  return [a[0]*b[0]+a[2]*b[1], a[1]*b[0]+a[3]*b[1],
+          a[0]*b[2]+a[2]*b[3], a[1]*b[2]+a[3]*b[3],
+          a[0]*b[4]+a[2]*b[5]+a[4], a[1]*b[4]+a[3]*b[5]+a[5]];
+}
+function unitBox(m){
+  const pts = [[0,0],[1,0],[0,1],[1,1]].map(([x,y])=>[m[0]*x+m[2]*y+m[4], m[1]*x+m[3]*y+m[5]]);
+  const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
+  const x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
+  return {w:(x1-x0)/72, h:(y1-y0)/72, rect:[x0,y0,x1,y1]};
+}
+
+async function readPdf(buf){
+  const pdf  = await pdfjsLib.getDocument({data:buf}).promise;
+  const page = await pdf.getPage(1);
+
+  const ol = await page.getOperatorList();
+  let ctm=[1,0,0,1,0,0]; const stack=[]; const found=[];
+  const paints = [OPS.paintImageXObject, OPS.paintImageMaskXObject,
+                  OPS.paintJpegXObject, OPS.paintInlineImageXObject].filter(v=>v!==undefined);
+  for (let i=0;i<ol.fnArray.length;i++){
+    const fn = ol.fnArray[i], a = ol.argsArray[i];
+    if (fn===OPS.save) stack.push(ctm.slice());
+    else if (fn===OPS.restore) ctm = stack.pop() || [1,0,0,1,0,0];
+    else if (fn===OPS.transform) ctm = mul(ctm, a);
+    else if (fn===OPS.paintFormXObjectBegin){ stack.push(ctm.slice()); ctm = mul(ctm, a[0]); }
+    else if (fn===OPS.paintFormXObjectEnd) ctm = stack.pop() || [1,0,0,1,0,0];
+    else if (paints.includes(fn)){
+      const b = unitBox(ctm);
+      if (b.w>0.5 && b.h>0.5) found.push(b);
+    }
+  }
+  found.sort((x,y)=> y.w*y.h - x.w*x.h);
+
+  const view = page.view;
+  const crop = found.length ? found[0].rect : null;
+  const wIn  = crop ? found[0].w : page.getViewport({scale:1}).width/72;
+  const hIn  = crop ? found[0].h : page.getViewport({scale:1}).height/72;
+
+  // rendu de l'élément retenu, à résolution confortable
+  const target = 900;
+  const vp1 = page.getViewport({scale:1});
+  const b1  = crop ? vp1.convertToViewportRectangle(crop) : [0,0,vp1.width,vp1.height];
+  const w1  = Math.abs(b1[2]-b1[0]), h1 = Math.abs(b1[3]-b1[1]);
+  const scale = Math.min(target/w1, target/h1, 6);
+
+  const vpS = page.getViewport({scale});
+  let ox=0, oy=0, cw=vpS.width, ch=vpS.height;
+  if (crop){
+    const rS = vpS.convertToViewportRectangle(crop);
+    ox = Math.min(rS[0],rS[2]); oy = Math.min(rS[1],rS[3]);
+    cw = Math.abs(rS[2]-rS[0]); ch = Math.abs(rS[3]-rS[1]);
+  }
+  const vp = page.getViewport({scale, offsetX:-ox, offsetY:-oy});
+
+  const cv = document.createElement("canvas");
+  cv.width = Math.max(1, Math.round(cw)); cv.height = Math.max(1, Math.round(ch));
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0,0,cv.width,cv.height);
+  await page.render({canvasContext:ctx, viewport:vp}).promise;
+
+  return {canvas:cv, wIn, hIn, detected:!!crop};
+}
+
+function imgDensity(buf, type){
+  const d = new DataView(buf);
+  try{
+    if (type.includes("png")){
+      let o = 8;
+      while (o < d.byteLength-8){
+        const len = d.getUint32(o);
+        const tag = String.fromCharCode(d.getUint8(o+4),d.getUint8(o+5),d.getUint8(o+6),d.getUint8(o+7));
+        if (tag==="pHYs"){
+          const px=d.getUint32(o+8), py=d.getUint32(o+12), unit=d.getUint8(o+16);
+          if (unit===1) return {x:px*0.0254, y:py*0.0254};
+        }
+        o += 12+len;
+      }
+    } else {
+      let o = 2;
+      while (o < d.byteLength-4){
+        if (d.getUint8(o)!==0xFF){ o++; continue; }
+        const mk = d.getUint8(o+1), len = d.getUint16(o+2);
+        if (mk===0xE0){
+          const unit=d.getUint8(o+11), xd=d.getUint16(o+12), yd=d.getUint16(o+14);
+          if (unit===1 && xd>1) return {x:xd, y:yd||xd};
+          if (unit===2 && xd>1) return {x:xd*2.54, y:(yd||xd)*2.54};
+        }
+        if (mk===0xDA) break;
+        o += 2+len;
+      }
+    }
+  }catch(e){}
+  return null;
+}
+
+async function readImage(file, buf){
+  const bmp  = await createImageBitmap(new Blob([buf],{type:file.type}));
+  const dens = imgDensity(buf, file.type||"");
+  const dx = dens ? dens.x : 300, dy = dens ? dens.y : dx;
+  const cv = document.createElement("canvas");
+  cv.width = bmp.width; cv.height = bmp.height;
+  cv.getContext("2d").drawImage(bmp, 0, 0);
+  return {canvas:cv, wIn:bmp.width/dx, hIn:bmp.height/dy, detected:!!dens, assumed:!dens};
+}
+
+async function handle(file, buf){
+  try{
+    const isPdf = (file.type||"").includes("pdf") || /\.pdf$/i.test(file.name);
+    const r = isPdf ? await readPdf(buf) : await readImage(file, buf);
+    art = Object.assign({name:file.name}, r);
+    cols  = snapCols(art.wIn);
+    lines = clampLines(Math.round(art.hIn * AGATE));
+    $("reset").disabled = false;
+    sync(); draw();
+  }catch(err){
+    art = null;
+    $("stagecap").textContent = "Lecture impossible : " + err.message;
+  }
+}
+
+// ---------- taille ----------
+function snapCols(wIn){
+  let best=1, d=Infinity;
+  COLW.forEach((w,i)=>{ const dd=Math.abs(wIn-w); if(dd<d){d=dd;best=i+1;} });
+  return best;
+}
+function clampLines(n){ return Math.min(MAXL, Math.max(1, Math.round(n))); }
+function frameW(){ return COLW[cols-1]; }
+function frameH(){ return lines / AGATE; }
+
+function sync(){
+  $("cols").value  = String(cols);
+  $("lines").value = String(lines);
+
+  const w = frameW(), h = frameH(), surf = cols*lines;
+  const tarif = parseFloat($("tarif").value) || 0;
+
+  $("big").textContent = `${cols} col${cols>1?"s":""} × ${lines} ligne${lines>1?"s":""}`;
+  $("sub1").textContent = `${w.toFixed(3)} × ${h.toFixed(3)} po`;
+  $("sub2").textContent = `${cols} × ${lines} = ${surf} unités × ${tarif.toFixed(2)} $ = ${(surf*tarif).toFixed(2)} $`;
+
+  // format de la carte qui correspond
+  const same = CARTE.filter(f=>f[1]===cols);
+  const exact = same.find(f=>f[2]===lines);
+  if (exact){
+    $("fmt").textContent = `Correspond au format ${exact[0]} de la carte.`;
+  } else if (same.length){
+    const near = same.reduce((a,b)=>Math.abs(b[2]-lines)<Math.abs(a[2]-lines)?b:a);
+    const d = lines - near[2];
+    $("fmt").textContent = `Hors carte. Le plus proche est ${near[0]}, ${near[1]} × ${near[2]} — ${d>0?"+":""}${d} ligne${Math.abs(d)>1?"s":""}.`;
+  } else {
+    $("fmt").textContent = "";
+  }
+
+  // écart entre le fichier et le cadre
+  const el = $("flag");
+  if (!art){ el.innerHTML = ""; return; }
+  const dw = w - art.wIn, dh = h - art.hIn;
+  const dlines = (h - art.hIn) * AGATE;
+  if (art.assumed){
+    el.innerHTML = `<div class="flag">Ce fichier ne porte pas sa résolution. Les dimensions supposent 300 ppp — à confirmer avant de facturer.</div>`;
+  } else if (Math.abs(dw) < 0.03 && Math.abs(dlines) < 0.6){
+    el.innerHTML = `<div class="flag ok">Le cadre correspond au fichier, qui mesure ${art.wIn.toFixed(3)} × ${art.hIn.toFixed(3)} po.</div>`;
+  } else {
+    const sens = dlines > 0 ? "plus court que" : "plus haut que";
+    el.innerHTML = `<div class="flag">Le fichier mesure ${art.wIn.toFixed(3)} × ${art.hIn.toFixed(3)} po, soit ${Math.abs(dlines).toFixed(1)} ligne${Math.abs(dlines)>1?"s":""} ${sens} le cadre.</div>`;
+  }
+}
+
+// ---------- dessin ----------
+function draw(){
+  const cv = $("stage"), ctx = cv.getContext("2d");
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+
+  const availW = Math.min(300, (cv.parentElement.clientWidth || 300));
+  const availH = 540;
+  const s = Math.min(availW / PW, availH / PH);   // pixels CSS par pouce
+  const W = PW * s, H = PH * s;
+
+  cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr);
+  cv.style.width = Math.round(W)+"px"; cv.style.height = Math.round(H)+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+
+  const css = getComputedStyle(document.documentElement);
+  const C = n => css.getPropertyValue(n).trim();
+
+  // page
+  ctx.fillStyle = C("--page"); ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle = C("--rule"); ctx.lineWidth = 1;
+  ctx.strokeRect(.5,.5,W-1,H-1);
+
+  // colonnes
+  const gut = (COLW[1] - 2*COLW[0]);
+  ctx.fillStyle = C("--col");
+  for (let i=0;i<5;i++){
+    const x = i*(COLW[0]+gut)*s;
+    ctx.fillRect(x, 0, COLW[0]*s, H);
+  }
+
+  // cadre de l'annonce, ancré en haut à gauche
+  const fw = frameW()*s, fh = frameH()*s;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0,0,fw,fh); ctx.clip();
+  ctx.fillStyle = C("--page"); ctx.fillRect(0,0,fw,fh);
+
+  if (art){
+    const zoom = (parseInt($("zoom").value,10)||100)/100;
+    const fit  = $("fit").value;
+    const aw = art.canvas.width, ah = art.canvas.height;
+    let dw, dh;
+    if (fit === "stretch"){ dw = fw; dh = fh; }
+    else {
+      const k = fit === "cover" ? Math.max(fw/aw, fh/ah) : Math.min(fw/aw, fh/ah);
+      dw = aw*k; dh = ah*k;
+    }
+    dw *= zoom; dh *= zoom;
+    ctx.drawImage(art.canvas, (fw-dw)/2, (fh-dh)/2, dw, dh);
+  } else {
+    ctx.fillStyle = C("--band"); ctx.fillRect(0,0,fw,fh);
+    ctx.fillStyle = C("--muted");
+    ctx.font = "500 12px Archivo, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("Cadre vide", fw/2, fh/2);
+  }
+  ctx.restore();
+
+  ctx.strokeStyle = C("--mes"); ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, fw-2, fh-2);
+
+  // poignée
+  const hs = 13;
+  ctx.fillStyle = C("--mes");
+  ctx.fillRect(fw-hs, fh-hs, hs, hs);
+  ctx.strokeStyle = C("--page"); ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(fw-hs+3.5, fh-3.5); ctx.lineTo(fw-3.5, fh-hs+3.5);
+  ctx.moveTo(fw-hs+7, fh-3.5);   ctx.lineTo(fw-3.5, fh-hs+7);
+  ctx.stroke();
+
+  geo = {s, W, H, fw, fh, hs};
+  cv.style.cursor = "default";
+}
+
+// ---------- glissement ----------
+function localPos(e){
+  const r = $("stage").getBoundingClientRect();
+  return {x: e.clientX - r.left, y: e.clientY - r.top};
+}
+function onHandle(p){
+  if (!geo) return false;
+  const pad = 8;
+  return p.x >= geo.fw-geo.hs-pad && p.x <= geo.fw+pad &&
+         p.y >= geo.fh-geo.hs-pad && p.y <= geo.fh+pad;
+}
+
+$("stage").addEventListener("pointermove", e=>{
+  if (!drag){ $("stage").style.cursor = onHandle(localPos(e)) ? "nwse-resize" : "default"; return; }
+  const p = localPos(e);
+  const wIn = Math.max(0, p.x / geo.s);
+  const hIn = Math.max(0, p.y / geo.s);
+
+  cols = snapCols(wIn);
+  if ($("lock").checked && art && art.hIn > 0){
+    lines = clampLines(frameW() * (art.hIn/art.wIn) * AGATE);
+  } else {
+    lines = clampLines(hIn * AGATE);
+  }
+  sync(); draw();
+  $("stage").style.cursor = "nwse-resize";
+});
+
+$("stage").addEventListener("pointerdown", e=>{
+  const p = localPos(e);
+  if (!onHandle(p)) return;
+  drag = true;
+  $("stage").setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+
+["pointerup","pointercancel"].forEach(ev =>
+  $("stage").addEventListener(ev, e=>{
+    if (!drag) return;
+    drag = null;
+    try{ $("stage").releasePointerCapture(e.pointerId); }catch(err){}
+  })
+);
+
+// ---------- contrôles ----------
+$("cols").addEventListener("change", ()=>{
+  cols = parseInt($("cols").value,10) || 1;
+  if ($("lock").checked && art) lines = clampLines(frameW()*(art.hIn/art.wIn)*AGATE);
+  sync(); draw();
+});
+$("lines").addEventListener("input", ()=>{
+  const v = parseInt($("lines").value,10);
+  if (!isNaN(v)) { lines = clampLines(v); sync(); draw(); }
+});
+$("lock").addEventListener("change", ()=>{
+  if ($("lock").checked && art){ lines = clampLines(frameW()*(art.hIn/art.wIn)*AGATE); }
+  sync(); draw();
+});
+$("fit").addEventListener("change", draw);
+$("zoom").addEventListener("input", ()=>{
+  $("zoompct").textContent = $("zoom").value + " %";
+  draw();
+});
+$("tarif").addEventListener("change", sync);
+$("reset").addEventListener("click", ()=>{
+  if (!art) return;
+  cols  = snapCols(art.wIn);
+  lines = clampLines(art.hIn * AGATE);
+  $("zoom").value = 100; $("zoompct").textContent = "100 %";
+  sync(); draw();
+});
+
+// ---------- entrées ----------
+const drop = $("drop"), fileEl = $("file");
+drop.addEventListener("click", ()=> fileEl.click());
+drop.addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();fileEl.click();} });
+drop.addEventListener("dragover", e=>{ e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", ()=> drop.classList.remove("over"));
+drop.addEventListener("drop", e=>{
+  e.preventDefault(); drop.classList.remove("over");
+  const f = e.dataTransfer.files[0]; if (f) f.arrayBuffer().then(b=> handle(f,b));
+});
+fileEl.addEventListener("change", ()=>{
+  const f = fileEl.files[0]; if (f) f.arrayBuffer().then(b=> handle(f,b));
+});
+
+window.addEventListener("resize", draw);
+sync(); draw();
+</script>
+</body>
+</html>
