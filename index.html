@@ -228,7 +228,6 @@ const BUCKETS = [
 
 const $ = id => document.getElementById(id);
 let colW = COLS_DEFAULT.slice();
-let proofRead = null;  // valeurs lues sur une épreuve
 let preview = null;    // aperçu courant : page PDF ou image
 
 // ---------- réglages ----------
@@ -245,24 +244,13 @@ buildColInputs();
 $("tarifSel").addEventListener("change", compute);
 
 // ---------- lecture des PDF ----------
-// Deux voies, dans cet ordre :
-//   1. le bandeau de l'épreuve La Liberté, qui porte la valeur vendue;
-//   2. à défaut, les dimensions de la page, car un fichier client EST l'annonce.
-// On ne cherche plus le plus grand élément placé : une annonce bâtie de
-// plusieurs pièces, ou dont l'étendue est un tracé vectoriel, se mesurait trop court.
+// Un fichier reçu d'un client EST l'annonce : sa taille de page donne la mesure.
+// On ne cherche pas d'élément à l'intérieur — une annonce bâtie de plusieurs
+// pièces, ou dont l'étendue est un tracé vectoriel, se mesurerait trop court.
 async function readPdf(buf){
   const pdf  = await pdfjsLib.getDocument({data:buf}).promise;
   const page = await pdf.getPage(1);
   const vp   = page.getViewport({scale:1});
-
-  proofRead = null;
-  try{
-    const tc  = await page.getTextContent();
-    const txt = tc.items.map(i=>i.str).join(" ").replace(/\s+/g," ");
-    const m   = txt.match(/Col\.?[^0-9]{0,60}?Rate\s*(\d{1,2})\s+(\d{1,3})\b/i);
-    if (m) proofRead = {c:+m[1], l:+m[2]};
-  }catch(e){}
-
   preview = {type:"pdf", pdf, page};
   return {pageSize:{w:vp.width/72, h:vp.height/72}};
 }
@@ -314,21 +302,13 @@ async function readImage(file, buf){
 // ---------- traitement ----------
 async function handle(file, buf){
   setStatus("Lecture de " + file.name + "…", "");
-  proofRead = null; preview = null;
+  preview = null;
   try{
     if ((file.type||"").includes("pdf") || /\.pdf$/i.test(file.name)){
       const r = await readPdf(buf);
-      const perInch = parseFloat($("agate").value)||14;
-      if (proofRead){
-        const ci = proofRead.c, li = proofRead.l;
-        $("w").value = (colW[ci-1]||0).toFixed(3);
-        $("h").value = (li/perInch).toFixed(3);
-        setStatus(`Épreuve La Liberté reconnue : le bandeau indique ${ci} colonne${ci>1?"s":""} × ${li} ligne${li>1?"s":""}. Valeurs reprises telles quelles.`, "ok");
-      } else {
-        $("w").value = r.pageSize.w.toFixed(3);
-        $("h").value = r.pageSize.h.toFixed(3);
-        setStatus(`Fichier client : la page mesure ${r.pageSize.w.toFixed(3)} × ${r.pageSize.h.toFixed(3)} po. C'est elle qui donne la taille.`, "ok");
-      }
+      $("w").value = r.pageSize.w.toFixed(3);
+      $("h").value = r.pageSize.h.toFixed(3);
+      setStatus(`La page du PDF mesure ${r.pageSize.w.toFixed(3)} × ${r.pageSize.h.toFixed(3)} po. C'est elle qui donne la taille.`, "ok");
     } else {
       const r = await readImage(file, buf);
       $("w").value = r.box.w.toFixed(3);
@@ -390,9 +370,7 @@ async function renderPreview(){
   }
 
   cap.hidden = false;
-  cap.textContent = proofRead
-    ? "Épreuve : les dimensions sont lues dans le bandeau."
-    : "Le fichier entier est l'annonce mesurée.";
+  cap.textContent = "Le fichier entier est l'annonce mesurée.";
 }
 
 

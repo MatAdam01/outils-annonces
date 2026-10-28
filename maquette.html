@@ -218,22 +218,13 @@ let drag = null;     // état du glissement
 let geo  = null;     // géométrie du dessin, pour le test de contact
 
 // ---------- lecture des fichiers ----------
-// Deux voies : le bandeau de l'épreuve s'il est lisible, sinon les dimensions
-// de la page, car un fichier client EST l'annonce. On ne cherche plus le plus
-// grand élément placé : une annonce bâtie de plusieurs pièces, ou dont
-// l'étendue est un tracé vectoriel, se mesurait trop court.
+// Un fichier reçu d'un client EST l'annonce : sa taille de page donne la mesure.
+// On ne cherche pas d'élément à l'intérieur — une annonce bâtie de plusieurs
+// pièces, ou dont l'étendue est un tracé vectoriel, se mesurerait trop court.
 async function readPdf(buf){
   const pdf  = await pdfjsLib.getDocument({data:buf}).promise;
   const page = await pdf.getPage(1);
   const vp1  = page.getViewport({scale:1});
-
-  let proof = null;
-  try{
-    const tc  = await page.getTextContent();
-    const txt = tc.items.map(i=>i.str).join(" ").replace(/\s+/g," ");
-    const m   = txt.match(/Col\.?[^0-9]{0,60}?Rate\s*(\d{1,2})\s+(\d{1,3})\b/i);
-    if (m) proof = {c:+m[1], l:+m[2]};
-  }catch(e){}
 
   const target = 900;
   const scale  = Math.min(target/vp1.width, target/vp1.height, 6);
@@ -245,7 +236,7 @@ async function readPdf(buf){
   ctx.fillStyle = "#fff"; ctx.fillRect(0,0,cv.width,cv.height);
   await page.render({canvasContext:ctx, viewport:vp}).promise;
 
-  return {canvas:cv, wIn:vp1.width/72, hIn:vp1.height/72, proof};
+  return {canvas:cv, wIn:vp1.width/72, hIn:vp1.height/72};
 }
 
 function imgDensity(buf, type){
@@ -295,8 +286,8 @@ async function handle(file, buf){
     const isPdf = (file.type||"").includes("pdf") || /\.pdf$/i.test(file.name);
     const r = isPdf ? await readPdf(buf) : await readImage(file, buf);
     art = Object.assign({name:file.name}, r);
-    if (r.proof){ cols = r.proof.c; lines = clampLines(r.proof.l); }
-    else { cols = snapCols(art.wIn); lines = fromInches(art.hIn); }
+    cols  = snapCols(art.wIn);
+    lines = fromInches(art.hIn);
     $("reset").disabled = false;
     sync(); draw();
   }catch(err){
@@ -344,10 +335,6 @@ function sync(){
   // écart entre le fichier et le cadre
   const el = $("flag");
   if (!art){ el.innerHTML = ""; return; }
-  if (art.proof){
-    el.innerHTML = `<div class="flag ok">Épreuve La Liberté : le bandeau indique ${art.proof.c} × ${art.proof.l}. L'aperçu montre la page entière, bandeau compris.</div>`;
-    return;
-  }
   const dw = w - art.wIn, dh = h - art.hIn;
   const dlines = (h - art.hIn) * AGATE;
   if (art.assumed){
@@ -500,8 +487,8 @@ $("zoom").addEventListener("input", ()=>{
 $("tarif").addEventListener("change", sync);
 $("reset").addEventListener("click", ()=>{
   if (!art) return;
-  if (art.proof){ cols = art.proof.c; lines = clampLines(art.proof.l); }
-  else { cols = snapCols(art.wIn); lines = fromInches(art.hIn); }
+  cols  = snapCols(art.wIn);
+  lines = fromInches(art.hIn);
   $("zoom").value = 100; $("zoompct").textContent = "100 %";
   sync(); draw();
 });
