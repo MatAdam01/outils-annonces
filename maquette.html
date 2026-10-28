@@ -74,8 +74,8 @@ input[type=range]:focus-visible{outline:2px solid var(--mes);outline-offset:1px}
 .opts .row > span{font-size:12.5px;color:var(--muted);min-width:96px}
 .opts select{font:inherit;font-size:13.5px;padding:4px 7px;border:1px solid var(--rule);
   border-radius:2px;background:var(--band);color:inherit}
-input[type=range]{flex:1;min-width:0;accent-color:var(--mes)}
-.pct{font-size:13px;color:var(--muted);min-width:44px;text-align:right}
+.keepratio{display:flex;align-items:center;gap:7px;font-size:13.5px;margin-top:13px}
+.keepratio input{accent-color:var(--mes)}
 
 .read{border:2px solid var(--mes);border-radius:3px;padding:16px 18px;margin-top:20px}
 .read .big{font-size:30px;font-weight:700;letter-spacing:-.025em;margin:0 0 3px}
@@ -138,27 +138,8 @@ button.ghost[disabled]:hover{border-color:var(--rule);color:inherit}
         </div>
         <button class="ghost" id="reset" disabled>Réinitialiser</button>
       </div>
+      <label class="keepratio"><input type="checkbox" id="lock" checked> Conserver les proportions du fichier</label>
       <div id="fmt" class="note"></div>
-    </div>
-
-    <div class="block">
-      <h2>Image dans le cadre</h2>
-      <div class="opts">
-        <div class="row">
-          <span>Cadrage</span>
-          <select id="fit">
-            <option value="contain" selected>Entière, marges si besoin</option>
-            <option value="cover">Remplit, déborde rogné</option>
-            <option value="stretch">Étirée au cadre</option>
-          </select>
-        </div>
-        <div class="row">
-          <span>Échelle</span>
-          <input id="zoom" type="range" min="50" max="200" step="1" value="100">
-          <span class="pct" id="zoompct">100 %</span>
-        </div>
-        <label><input type="checkbox" id="lock" checked> Conserver les proportions du fichier</label>
-      </div>
     </div>
 
     <div class="read">
@@ -309,11 +290,9 @@ function fromInches(h){ return Math.min(MAXL, Math.max(1, Math.ceil(h*AGATE - 0.
 function frameW(){ return COLW[cols-1]; }
 function frameH(){ return lines / AGATE; }
 
-// Le bouton n'est actif que si la taille ou l'échelle s'écartent du fichier.
-// Il ne touche ni au cadrage ni aux proportions, donc ceux-là ne l'allument pas.
+// Le bouton n'est actif que si la taille s'écarte de celle du fichier.
 function refreshReset(){
-  const z = parseInt($("zoom").value,10) || 100;
-  const modifie = !!art && (cols !== art.baseCols || lines !== art.baseLines || z !== 100);
+  const modifie = !!art && (cols !== art.baseCols || lines !== art.baseLines);
   $("reset").disabled = !modifie;
 }
 
@@ -394,16 +373,10 @@ function draw(){
   ctx.fillStyle = C("--page"); ctx.fillRect(0,0,fw,fh);
 
   if (art){
-    const zoom = (parseInt($("zoom").value,10)||100)/100;
-    const fit  = $("fit").value;
+    // L'annonce entière, centrée, sans déformation.
     const aw = art.canvas.width, ah = art.canvas.height;
-    let dw, dh;
-    if (fit === "stretch"){ dw = fw; dh = fh; }
-    else {
-      const k = fit === "cover" ? Math.max(fw/aw, fh/ah) : Math.min(fw/aw, fh/ah);
-      dw = aw*k; dh = ah*k;
-    }
-    dw *= zoom; dh *= zoom;
+    const k = Math.min(fw/aw, fh/ah);
+    const dw = aw*k, dh = ah*k;
     ctx.drawImage(art.canvas, (fw-dw)/2, (fh-dh)/2, dw, dh);
   } else {
     ctx.fillStyle = C("--band"); ctx.fillRect(0,0,fw,fh);
@@ -489,17 +462,11 @@ $("lock").addEventListener("change", ()=>{
   if ($("lock").checked && art){ lines = clampLines(frameW()*(art.hIn/art.wIn)*AGATE); }
   sync(); draw();
 });
-$("fit").addEventListener("change", draw);
-$("zoom").addEventListener("input", ()=>{
-  $("zoompct").textContent = $("zoom").value + " %";
-  refreshReset(); draw();
-});
 $("tarif").addEventListener("change", sync);
 $("reset").addEventListener("click", ()=>{
   if (!art) return;
   cols  = snapCols(art.wIn);
   lines = fromInches(art.hIn);
-  $("zoom").value = 100; $("zoompct").textContent = "100 %";
   sync(); draw();
 });
 
