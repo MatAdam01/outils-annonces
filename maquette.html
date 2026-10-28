@@ -135,7 +135,7 @@ button.ghost[disabled]:hover{border-color:var(--rule);color:inherit}
           <label for="lines">Lignes agates</label>
           <input id="lines" type="number" min="1" max="277" step="1" value="125">
         </div>
-        <button class="ghost" id="reset" disabled>Taille du fichier</button>
+        <button class="ghost" id="reset" disabled>Réinitialiser</button>
       </div>
       <div id="fmt" class="note"></div>
     </div>
@@ -288,7 +288,7 @@ async function handle(file, buf){
     art = Object.assign({name:file.name}, r);
     cols  = snapCols(art.wIn);
     lines = fromInches(art.hIn);
-    $("reset").disabled = false;
+    art.baseCols = cols; art.baseLines = lines;   // point de retour
     sync(); draw();
   }catch(err){
     art = null;
@@ -308,9 +308,18 @@ function fromInches(h){ return Math.min(MAXL, Math.max(1, Math.ceil(h*AGATE - 0.
 function frameW(){ return COLW[cols-1]; }
 function frameH(){ return lines / AGATE; }
 
+// Le bouton n'est actif que si la taille ou l'échelle s'écartent du fichier.
+// Il ne touche ni au cadrage ni aux proportions, donc ceux-là ne l'allument pas.
+function refreshReset(){
+  const z = parseInt($("zoom").value,10) || 100;
+  const modifie = !!art && (cols !== art.baseCols || lines !== art.baseLines || z !== 100);
+  $("reset").disabled = !modifie;
+}
+
 function sync(){
   $("cols").value  = String(cols);
   $("lines").value = String(lines);
+  refreshReset();
 
   const w = frameW(), h = frameH(), surf = cols*lines;
   const tarif = parseFloat($("tarif").value) || 0;
@@ -482,7 +491,7 @@ $("lock").addEventListener("change", ()=>{
 $("fit").addEventListener("change", draw);
 $("zoom").addEventListener("input", ()=>{
   $("zoompct").textContent = $("zoom").value + " %";
-  draw();
+  refreshReset(); draw();
 });
 $("tarif").addEventListener("change", sync);
 $("reset").addEventListener("click", ()=>{
