@@ -162,8 +162,7 @@ td.num{text-align:right}
         </div>
       </div>
       <p class="note">Corrigez une valeur et tout se recalcule.</p>
-      <ul class="list" id="cands"></ul>
-    </div>
+      </div>
 
     <div id="out"></div>
   </section>
@@ -192,7 +191,7 @@ td.num{text-align:right}
     <h2 style="margin-top:22px">Comment le calcul est posé</h2>
     <p class="note">La ligne agate vaut un quatorzième de pouce. Vérifié sur les 24 formats de la carte : l'écart maximal y est d'une demi-ligne, ce qui correspond à l'arrondi des dimensions imprimées, pas à une autre unité.</p>
     <p class="note">La hauteur mesurée est multipliée par 14, puis arrondie à la ligne supérieure. Un dépassement de quelques centièmes de pouce — trait de coupe, fond perdu — est absorbé au lieu d'être facturé comme une ligne de plus.</p>
-    <p class="note">La largeur ne s'arrondit pas : seules les cinq largeurs de la carte existent. L'outil retient la plus proche, et prévient quand le fichier s'en écarte de plus d'un seizième de pouce — signe d'un mauvais export plutôt que d'un autre format.</p>
+    <p class="note">La largeur ne s'arrondit pas : seules les cinq largeurs de la carte existent. L'outil retient la plus proche, et prévient quand le fichier s'en écarte de plus d'un huitième de pouce — signe d'un mauvais export plutôt que d'un autre format.</p>
   </div>
 </details>
 
@@ -229,9 +228,7 @@ const BUCKETS = [
 
 const $ = id => document.getElementById(id);
 let colW = COLS_DEFAULT.slice();
-let boxes = [];        // boîtes détectées dans le fichier
 let proofRead = null;  // valeurs lues sur une épreuve
-let selIdx = 0;        // boîte retenue
 let preview = null;    // aperçu courant : page PDF ou image
 
 // ---------- réglages ----------
@@ -247,55 +244,27 @@ buildColInputs();
 ["agate","maxl","tarifSel","w","h"].forEach(id=> $(id).addEventListener("input", compute));
 $("tarifSel").addEventListener("change", compute);
 
-// ---------- géométrie PDF ----------
-function mul(a,b){
-  return [a[0]*b[0]+a[2]*b[1], a[1]*b[0]+a[3]*b[1],
-          a[0]*b[2]+a[2]*b[3], a[1]*b[2]+a[3]*b[3],
-          a[0]*b[4]+a[2]*b[5]+a[4], a[1]*b[4]+a[3]*b[5]+a[5]];
-}
-function unitBox(m){
-  const pts = [[0,0],[1,0],[0,1],[1,1]].map(([x,y])=>[m[0]*x+m[2]*y+m[4], m[1]*x+m[3]*y+m[5]]);
-  const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
-  const x0 = Math.min(...xs), x1 = Math.max(...xs);
-  const y0 = Math.min(...ys), y1 = Math.max(...ys);
-  return {w:(x1-x0)/72, h:(y1-y0)/72, rect:[x0,y0,x1,y1]};
-}
-
+// ---------- lecture des PDF ----------
+// Deux voies, dans cet ordre :
+//   1. le bandeau de l'épreuve La Liberté, qui porte la valeur vendue;
+//   2. à défaut, les dimensions de la page, car un fichier client EST l'annonce.
+// On ne cherche plus le plus grand élément placé : une annonce bâtie de
+// plusieurs pièces, ou dont l'étendue est un tracé vectoriel, se mesurait trop court.
 async function readPdf(buf){
-  const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+  const pdf  = await pdfjsLib.getDocument({data:buf}).promise;
   const page = await pdf.getPage(1);
-  const vp = page.getViewport({scale:1});
-  const pageSize = {w:vp.width/72, h:vp.height/72};
+  const vp   = page.getViewport({scale:1});
 
-  // 1 — épreuve : les valeurs sont déjà écrites dans le bandeau
   proofRead = null;
   try{
-    const tc = await page.getTextContent();
+    const tc  = await page.getTextContent();
     const txt = tc.items.map(i=>i.str).join(" ").replace(/\s+/g," ");
-    const m = txt.match(/Col\.?[^0-9]{0,60}?Rate\s*(\d{1,2})\s+(\d{1,3})\b/i);
+    const m   = txt.match(/Col\.?[^0-9]{0,60}?Rate\s*(\d{1,2})\s+(\d{1,3})\b/i);
     if (m) proofRead = {c:+m[1], l:+m[2]};
   }catch(e){}
 
-  // 2 — boîtes des éléments placés
-  const ol = await page.getOperatorList();
-  let ctm=[1,0,0,1,0,0]; const stack=[]; const found=[];
-  const paints = [OPS.paintImageXObject, OPS.paintImageMaskXObject,
-                  OPS.paintJpegXObject, OPS.paintInlineImageXObject].filter(v=>v!==undefined);
-  for (let i=0;i<ol.fnArray.length;i++){
-    const fn = ol.fnArray[i], a = ol.argsArray[i];
-    if (fn===OPS.save){ stack.push(ctm.slice()); }
-    else if (fn===OPS.restore){ ctm = stack.pop() || [1,0,0,1,0,0]; }
-    else if (fn===OPS.transform){ ctm = mul(ctm, a); }
-    else if (fn===OPS.paintFormXObjectBegin){ stack.push(ctm.slice()); ctm = mul(ctm, a[0]); }
-    else if (fn===OPS.paintFormXObjectEnd){ ctm = stack.pop() || [1,0,0,1,0,0]; }
-    else if (paints.includes(fn)){
-      const b = unitBox(ctm);
-      if (b.w>0.5 && b.h>0.5) found.push(b);
-    }
-  }
-  found.sort((x,y)=> y.w*y.h - x.w*x.h);
   preview = {type:"pdf", pdf, page};
-  return {pageSize, found};
+  return {pageSize:{w:vp.width/72, h:vp.height/72}};
 }
 
 // ---------- images ----------
@@ -345,24 +314,20 @@ async function readImage(file, buf){
 // ---------- traitement ----------
 async function handle(file, buf){
   setStatus("Lecture de " + file.name + "…", "");
-  boxes = []; proofRead = null; selIdx = 0; preview = null;
+  proofRead = null; preview = null;
   try{
     if ((file.type||"").includes("pdf") || /\.pdf$/i.test(file.name)){
       const r = await readPdf(buf);
-      boxes = r.found;
+      const perInch = parseFloat($("agate").value)||14;
       if (proofRead){
-        const li = proofRead.l, ci = proofRead.c;
+        const ci = proofRead.c, li = proofRead.l;
         $("w").value = (colW[ci-1]||0).toFixed(3);
-        $("h").value = (li/(parseFloat($("agate").value)||14)).toFixed(3);
+        $("h").value = (li/perInch).toFixed(3);
         setStatus(`Épreuve La Liberté reconnue : le bandeau indique ${ci} colonne${ci>1?"s":""} × ${li} ligne${li>1?"s":""}. Valeurs reprises telles quelles.`, "ok");
-      } else if (boxes.length){
-        $("w").value = boxes[0].w.toFixed(3);
-        $("h").value = boxes[0].h.toFixed(3);
-        setStatus(`${boxes.length} élément${boxes.length>1?"s":""} placé${boxes.length>1?"s":""} détecté${boxes.length>1?"s":""}. Le plus grand est retenu — page de ${r.pageSize.w.toFixed(2)} × ${r.pageSize.h.toFixed(2)} po.`, "ok");
       } else {
         $("w").value = r.pageSize.w.toFixed(3);
         $("h").value = r.pageSize.h.toFixed(3);
-        setStatus("Aucun élément placé détecté : ce sont les dimensions de la page entière qui s'affichent. Vérifiez-les avant de vous en servir.", "warn");
+        setStatus(`Fichier client : la page mesure ${r.pageSize.w.toFixed(3)} × ${r.pageSize.h.toFixed(3)} po. C'est elle qui donne la taille.`, "ok");
       }
     } else {
       const r = await readImage(file, buf);
@@ -376,27 +341,12 @@ async function handle(file, buf){
   }catch(err){
     setStatus("Lecture impossible : " + err.message, "err");
   }
-  renderCands();
   compute();
   renderPreview();
 }
 
 function setStatus(msg, kind){
   const s = $("status"); s.textContent = msg; s.className = "status" + (kind?" "+kind:"");
-}
-function renderCands(){
-  const el = $("cands");
-  if (!boxes.length){ el.innerHTML = ""; return; }
-  el.innerHTML = "<li style='border:0;color:var(--muted);padding-bottom:2px'>Éléments mesurés dans le fichier</li>" +
-    boxes.slice(0,6).map((b,i)=>
-      `<li><span>${b.w.toFixed(3)} × ${b.h.toFixed(3)} po</span>
-       <button data-box="${i}">Utiliser</button></li>`).join("");
-  el.querySelectorAll("button").forEach(btn=> btn.addEventListener("click", ()=>{
-    selIdx = +btn.dataset.box;
-    const b = boxes[selIdx];
-    $("w").value = b.w.toFixed(3); $("h").value = b.h.toFixed(3);
-    compute(); renderPreview();
-  }));
 }
 
 // ---------- aperçu du fichier ----------
@@ -414,45 +364,19 @@ async function renderPreview(){
   try{
     if (preview.type === "pdf"){
       const page = preview.page;
-      const view = page.view;               // [x0,y0,x1,y1] de la boîte de page
-      const sel = boxes[selIdx];
-
-      // L'aperçu montre l'élément mesuré, détouré du reste de la page.
-      let crop = null;
-      if (sel){
-        const r = sel.rect;
-        const mx = Math.max(6, (r[2]-r[0]) * 0.04);
-        const my = Math.max(6, (r[3]-r[1]) * 0.04);
-        crop = [Math.max(view[0], r[0]-mx), Math.max(view[1], r[1]-my),
-                Math.min(view[2], r[2]+mx), Math.min(view[3], r[3]+my)];
-      }
-
-      const vp1 = page.getViewport({scale:1});
-      const box1 = crop ? vp1.convertToViewportRectangle(crop)
-                        : [0, 0, vp1.width, vp1.height];
-      const w1 = Math.abs(box1[2]-box1[0]), h1 = Math.abs(box1[3]-box1[1]);
-      const scale = Math.min(maxW/w1, maxH/h1) * dpr;
-
-      const vpS = page.getViewport({scale});
-      let ox = 0, oy = 0, cw = vpS.width, ch = vpS.height;
-      if (crop){
-        const rS = vpS.convertToViewportRectangle(crop);
-        ox = Math.min(rS[0], rS[2]); oy = Math.min(rS[1], rS[3]);
-        cw = Math.abs(rS[2]-rS[0]); ch = Math.abs(rS[3]-rS[1]);
-      }
-      const vp = page.getViewport({scale, offsetX:-ox, offsetY:-oy});
-
-      cv.width = Math.round(cw); cv.height = Math.round(ch);
-      cv.style.width = Math.round(cw/dpr)+"px";
-      cv.style.height = Math.round(ch/dpr)+"px";
+      const base = page.getViewport({scale:1});
+      const scale = Math.min(maxW/base.width, maxH/base.height) * dpr;
+      const vp = page.getViewport({scale});
+      cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+      cv.style.width = Math.round(vp.width/dpr)+"px";
+      cv.style.height = Math.round(vp.height/dpr)+"px";
       ctx.fillStyle = "#fff"; ctx.fillRect(0,0,cv.width,cv.height);
-      if (preview.task) { try{ preview.task.cancel(); }catch(e){} }
+      if (preview.task){ try{ preview.task.cancel(); }catch(e){} }
       preview.task = page.render({canvasContext:ctx, viewport:vp});
       await preview.task.promise;
-      preview.vp = vp;
     } else {
       const bmp = preview.bmp;
-      const scale = maxW / bmp.width;
+      const scale = Math.min(maxW/bmp.width, maxH/bmp.height);
       cv.width = Math.round(bmp.width*scale*dpr);
       cv.height = Math.round(bmp.height*scale*dpr);
       cv.style.width = Math.round(bmp.width*scale)+"px";
@@ -466,54 +390,20 @@ async function renderPreview(){
   }
 
   cap.hidden = false;
-  cap.textContent = preview.type === "pdf"
-    ? (boxes.length
-        ? "Voici l'élément mesuré. Si ce n'est pas l'annonce, choisissez-en un autre dans la liste."
-        : "Aucun élément placé détecté : vérifiez les dimensions à la main.")
-    : "Image reçue, mesurée en entier.";
-  drawOverlay();
+  cap.textContent = proofRead
+    ? "Épreuve : les dimensions sont lues dans le bandeau."
+    : "Le fichier entier est l'annonce mesurée.";
 }
 
-function drawOverlay(){
-  const ov = $("overlay"), cv = $("preview");
-  ov.width = cv.width; ov.height = cv.height;
-  ov.style.width = cv.style.width; ov.style.height = cv.style.height;
-  const ctx = ov.getContext("2d");
-  ctx.clearRect(0,0,ov.width,ov.height);
-  if (!preview) return;
-
-  const mes = getComputedStyle(document.documentElement).getPropertyValue("--mes").trim() || "#1F6F68";
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-
-  if (preview.type === "pdf" && preview.vp){
-    boxes.slice(0,6).forEach((b,i)=>{
-      const r = preview.vp.convertToViewportRectangle(b.rect);
-      const x = Math.min(r[0],r[2]), y = Math.min(r[1],r[3]);
-      const w = Math.abs(r[2]-r[0]), h = Math.abs(r[3]-r[1]);
-      if (i === selIdx){
-        ctx.strokeStyle = mes; ctx.lineWidth = 3*dpr;
-        ctx.setLineDash([]);
-      } else {
-        ctx.strokeStyle = mes; ctx.lineWidth = 1*dpr;
-        ctx.setLineDash([6*dpr, 4*dpr]); ctx.globalAlpha = 0.45;
-      }
-      ctx.strokeRect(x, y, w, h);
-      ctx.globalAlpha = 1;
-    });
-  } else if (preview.type === "img"){
-    ctx.strokeStyle = mes; ctx.lineWidth = 3*dpr; ctx.setLineDash([]);
-    ctx.strokeRect(1.5*dpr, 1.5*dpr, ov.width-3*dpr, ov.height-3*dpr);
-  }
-}
 
 // ---------- calcul ----------
 function compute(){
   const w = parseFloat($("w").value)||0, h = parseFloat($("h").value)||0;
   const perInch = parseFloat($("agate").value)||14;
   const maxL = parseInt($("maxl").value)||277;
-  // Seuil d'avertissement sur la largeur : 1/16 po. Ne change pas le nombre de
+  // Seuil d'avertissement sur la largeur : 1/8 po. Ne change pas le nombre de
   // colonnes retenu, signale seulement un fichier qui s'écarte de la carte.
-  const tol = 0.0625;
+  const tol = 0.125;
   // Marge de mesure : 0,1 ligne (~0,007 po). Absorbe un trait de coupe ou un
   // fond perdu, sans empêcher un vrai dépassement de monter d'une ligne.
   const noise = 0.1;

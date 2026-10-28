@@ -218,68 +218,34 @@ let drag = null;     // état du glissement
 let geo  = null;     // géométrie du dessin, pour le test de contact
 
 // ---------- lecture des fichiers ----------
-function mul(a,b){
-  return [a[0]*b[0]+a[2]*b[1], a[1]*b[0]+a[3]*b[1],
-          a[0]*b[2]+a[2]*b[3], a[1]*b[2]+a[3]*b[3],
-          a[0]*b[4]+a[2]*b[5]+a[4], a[1]*b[4]+a[3]*b[5]+a[5]];
-}
-function unitBox(m){
-  const pts = [[0,0],[1,0],[0,1],[1,1]].map(([x,y])=>[m[0]*x+m[2]*y+m[4], m[1]*x+m[3]*y+m[5]]);
-  const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
-  const x0=Math.min(...xs), x1=Math.max(...xs), y0=Math.min(...ys), y1=Math.max(...ys);
-  return {w:(x1-x0)/72, h:(y1-y0)/72, rect:[x0,y0,x1,y1]};
-}
-
+// Deux voies : le bandeau de l'épreuve s'il est lisible, sinon les dimensions
+// de la page, car un fichier client EST l'annonce. On ne cherche plus le plus
+// grand élément placé : une annonce bâtie de plusieurs pièces, ou dont
+// l'étendue est un tracé vectoriel, se mesurait trop court.
 async function readPdf(buf){
   const pdf  = await pdfjsLib.getDocument({data:buf}).promise;
   const page = await pdf.getPage(1);
+  const vp1  = page.getViewport({scale:1});
 
-  const ol = await page.getOperatorList();
-  let ctm=[1,0,0,1,0,0]; const stack=[]; const found=[];
-  const paints = [OPS.paintImageXObject, OPS.paintImageMaskXObject,
-                  OPS.paintJpegXObject, OPS.paintInlineImageXObject].filter(v=>v!==undefined);
-  for (let i=0;i<ol.fnArray.length;i++){
-    const fn = ol.fnArray[i], a = ol.argsArray[i];
-    if (fn===OPS.save) stack.push(ctm.slice());
-    else if (fn===OPS.restore) ctm = stack.pop() || [1,0,0,1,0,0];
-    else if (fn===OPS.transform) ctm = mul(ctm, a);
-    else if (fn===OPS.paintFormXObjectBegin){ stack.push(ctm.slice()); ctm = mul(ctm, a[0]); }
-    else if (fn===OPS.paintFormXObjectEnd) ctm = stack.pop() || [1,0,0,1,0,0];
-    else if (paints.includes(fn)){
-      const b = unitBox(ctm);
-      if (b.w>0.5 && b.h>0.5) found.push(b);
-    }
-  }
-  found.sort((x,y)=> y.w*y.h - x.w*x.h);
+  let proof = null;
+  try{
+    const tc  = await page.getTextContent();
+    const txt = tc.items.map(i=>i.str).join(" ").replace(/\s+/g," ");
+    const m   = txt.match(/Col\.?[^0-9]{0,60}?Rate\s*(\d{1,2})\s+(\d{1,3})\b/i);
+    if (m) proof = {c:+m[1], l:+m[2]};
+  }catch(e){}
 
-  const view = page.view;
-  const crop = found.length ? found[0].rect : null;
-  const wIn  = crop ? found[0].w : page.getViewport({scale:1}).width/72;
-  const hIn  = crop ? found[0].h : page.getViewport({scale:1}).height/72;
-
-  // rendu de l'élément retenu, à résolution confortable
   const target = 900;
-  const vp1 = page.getViewport({scale:1});
-  const b1  = crop ? vp1.convertToViewportRectangle(crop) : [0,0,vp1.width,vp1.height];
-  const w1  = Math.abs(b1[2]-b1[0]), h1 = Math.abs(b1[3]-b1[1]);
-  const scale = Math.min(target/w1, target/h1, 6);
-
-  const vpS = page.getViewport({scale});
-  let ox=0, oy=0, cw=vpS.width, ch=vpS.height;
-  if (crop){
-    const rS = vpS.convertToViewportRectangle(crop);
-    ox = Math.min(rS[0],rS[2]); oy = Math.min(rS[1],rS[3]);
-    cw = Math.abs(rS[2]-rS[0]); ch = Math.abs(rS[3]-rS[1]);
-  }
-  const vp = page.getViewport({scale, offsetX:-ox, offsetY:-oy});
-
+  const scale  = Math.min(target/vp1.width, target/vp1.height, 6);
+  const vp = page.getViewport({scale});
   const cv = document.createElement("canvas");
-  cv.width = Math.max(1, Math.round(cw)); cv.height = Math.max(1, Math.round(ch));
+  cv.width  = Math.max(1, Math.round(vp.width));
+  cv.height = Math.max(1, Math.round(vp.height));
   const ctx = cv.getContext("2d");
   ctx.fillStyle = "#fff"; ctx.fillRect(0,0,cv.width,cv.height);
   await page.render({canvasContext:ctx, viewport:vp}).promise;
 
-  return {canvas:cv, wIn, hIn, detected:!!crop};
+  return {canvas:cv, wIn:vp1.width/72, hIn:vp1.height/72, proof};
 }
 
 function imgDensity(buf, type){
@@ -329,8 +295,8 @@ async function handle(file, buf){
     const isPdf = (file.type||"").includes("pdf") || /\.pdf$/i.test(file.name);
     const r = isPdf ? await readPdf(buf) : await readImage(file, buf);
     art = Object.assign({name:file.name}, r);
-    cols  = snapCols(art.wIn);
-    lines = clampLines(Math.round(art.hIn * AGATE));
+    if (r.proof){ cols = r.proof.c; lines = clampLines(r.proof.l); }
+    else { cols = snapCols(art.wIn); lines = fromInches(art.hIn); }
     $("reset").disabled = false;
     sync(); draw();
   }catch(err){
@@ -346,6 +312,8 @@ function snapCols(wIn){
   return best;
 }
 function clampLines(n){ return Math.min(MAXL, Math.max(1, Math.round(n))); }
+// Arrondi à la ligne supérieure, avec 0,1 ligne de marge pour un fond perdu.
+function fromInches(h){ return Math.min(MAXL, Math.max(1, Math.ceil(h*AGATE - 0.1))); }
 function frameW(){ return COLW[cols-1]; }
 function frameH(){ return lines / AGATE; }
 
@@ -376,6 +344,10 @@ function sync(){
   // écart entre le fichier et le cadre
   const el = $("flag");
   if (!art){ el.innerHTML = ""; return; }
+  if (art.proof){
+    el.innerHTML = `<div class="flag ok">Épreuve La Liberté : le bandeau indique ${art.proof.c} × ${art.proof.l}. L'aperçu montre la page entière, bandeau compris.</div>`;
+    return;
+  }
   const dw = w - art.wIn, dh = h - art.hIn;
   const dlines = (h - art.hIn) * AGATE;
   if (art.assumed){
@@ -528,8 +500,8 @@ $("zoom").addEventListener("input", ()=>{
 $("tarif").addEventListener("change", sync);
 $("reset").addEventListener("click", ()=>{
   if (!art) return;
-  cols  = snapCols(art.wIn);
-  lines = clampLines(art.hIn * AGATE);
+  if (art.proof){ cols = art.proof.c; lines = clampLines(art.proof.l); }
+  else { cols = snapCols(art.wIn); lines = fromInches(art.hIn); }
   $("zoom").value = 100; $("zoompct").textContent = "100 %";
   sync(); draw();
 });
