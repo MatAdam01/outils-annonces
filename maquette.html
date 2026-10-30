@@ -590,6 +590,31 @@ fileEl.addEventListener("change", ()=>{
 
 window.addEventListener("resize", draw);
 sync(); draw();
+
+// ---------- ouverture depuis Airtable ----------
+// maquette.html?fichier=<adresse du fichier>&nom=<nom du fichier>
+// Les adresses de fichiers Airtable sont temporaires : si elle a expiré,
+// on le dit au lieu d'afficher une erreur technique.
+(async function(){
+  const q = new URLSearchParams(location.search);
+  const url = q.get("fichier");
+  if (!url) return;
+  const nom = q.get("nom") || decodeURIComponent(url.split("?")[0].split("/").pop() || "annonce");
+  $("stagecap").textContent = "Chargement de " + nom + "…";
+  try{
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("code " + r.status);
+    const buf = await r.arrayBuffer();
+    let type = (r.headers.get("content-type") || "").split(";")[0];
+    if (!type || type === "application/octet-stream"){
+      type = /\.pdf$/i.test(nom) ? "application/pdf" : /\.png$/i.test(nom) ? "image/png" : /\.jpe?g$/i.test(nom) ? "image/jpeg" : "";
+    }
+    await handle({name:nom, type}, buf);
+    if (art) $("stagecap").textContent = nom + " — tirez le coin inférieur droit du cadre.";
+  }catch(err){
+    $("stagecap").textContent = "Le fichier « " + nom + " » n'a pas pu être ouvert : le lien a probablement expiré. Rouvrez-le depuis Airtable, ou déposez le fichier ici.";
+  }
+})();
 </script>
 </body>
 </html>
