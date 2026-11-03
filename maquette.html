@@ -436,7 +436,7 @@ function sync(){
     el.innerHTML = `<div class="flag">Le fichier mesure ${art.wIn.toFixed(3)} × ${art.hIn.toFixed(3)} po, soit ${Math.abs(dlines).toFixed(1)} ligne${Math.abs(dlines)>1?"s":""} ${sens} le cadre.</div>`;
   }
   if (art.trimmed && !art.assumed){
-    el.innerHTML += `<div class="flag ok">Fond perdu retiré : la mesure vient du format coupé (TrimBox) du PDF.</div>`;
+    el.innerHTML += `<div class="flag ok">Fond perdu retiré : la mesure porte sur le format coupé de l’annonce.</div>`;
   }
 }
 
