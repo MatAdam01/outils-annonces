@@ -94,6 +94,10 @@ button.ghost[disabled]{opacity:.45;cursor:default}
 button.ghost[disabled]:hover{border-color:var(--rule);color:inherit}
 
 .note{color:var(--muted);font-size:13px;margin-top:12px;max-width:62ch}
+.crop{margin-top:22px}
+.crop[hidden]{display:none}
+#cropcv{display:block;margin:0 auto 10px;touch-action:none;max-width:100%}
+.crop .size{justify-content:center}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -116,6 +120,16 @@ button.ghost[disabled]:hover{border-color:var(--rule);color:inherit}
 
     <canvas id="stage" aria-label="Page du journal avec l'annonce placée"></canvas>
     <p class="stagecap" id="stagecap">Tirez le coin inférieur droit du cadre.</p>
+
+    <div class="block crop" id="cropblk" hidden>
+      <h2>Recadrage</h2>
+      <canvas id="cropcv" aria-label="Fichier complet avec la zone retenue"></canvas>
+      <div class="size">
+        <button class="ghost" id="autocrop">Retirer le blanc</button>
+        <button class="ghost" id="nocrop" disabled>Fichier complet</button>
+      </div>
+      <p class="note">Tirez un bord ou un coin pour ne garder que l'annonce, ou glissez la zone pour la déplacer. La surface se recalcule à partir de la zone retenue.</p>
+    </div>
   </section>
 
   <section>
@@ -369,10 +383,14 @@ async function handle(file, buf){
     const isPdf = (file.type||"").includes("pdf") || /\.pdf$/i.test(file.name);
     const r = isPdf ? await readPdf(buf) : await readImage(file, buf);
     art = Object.assign({name:file.name}, r);
+    art.full = r.canvas; art.fullW = r.wIn; art.fullH = r.hIn;   // fichier complet, jamais modifié
+    crop = {x0:0, y0:0, x1:1, y1:1};
     cols  = snapCols(art.wIn);
     lines = fromInches(art.hIn);
     art.baseCols = cols; art.baseLines = lines;   // point de retour
-    sync(); draw();
+    $("cropblk").hidden = false;
+    $("stagecap").textContent = "Tirez le coin inférieur droit du cadre.";
+    sync(); draw(); drawCrop();
   }catch(err){
     art = null;
     $("stagecap").textContent = "Lecture impossible : " + err.message;
@@ -427,13 +445,26 @@ function sync(){
   if (!art){ el.innerHTML = ""; return; }
   const dw = w - art.wIn, dh = h - art.hIn;
   const dlines = (h - art.hIn) * AGATE;
+  if (art.cropped){
+    const f = w / art.wIn, pct = Math.round((f - 1) * 100);
+    const echelle = pct > 0 ? `agrandie de ${pct} %` : pct < 0 ? `réduite de ${-pct} %` : "à sa taille";
+    const trop = pct > 50 ? " — au-delà de 50 %, vérifiez la lisibilité." : ".";
+    el.innerHTML = `<div class="flag${pct > 50 ? "" : " ok"}">Zone recadrée de ${art.wIn.toFixed(3)} × ${art.hIn.toFixed(3)} po, ${echelle} pour occuper ${cols} colonne${cols>1?"s":""}${trop}</div>`;
+    if (art.assumed) el.innerHTML += `<div class="flag">Ce fichier ne porte pas sa résolution. Les dimensions supposent 300 ppp — à confirmer avant de facturer.</div>`;
+    return;
+  }
   if (art.assumed){
     el.innerHTML = `<div class="flag">Ce fichier ne porte pas sa résolution. Les dimensions supposent 300 ppp — à confirmer avant de facturer.</div>`;
   } else if (Math.abs(dw) < 0.03 && Math.abs(dlines) < 0.6){
     el.innerHTML = `<div class="flag ok">Le cadre correspond au fichier, qui mesure ${art.wIn.toFixed(3)} × ${art.hIn.toFixed(3)} po.</div>`;
+  } else if (Math.abs(dlines) < 0.6){
+    el.innerHTML = `<div class="flag">Le fichier mesure ${art.wIn.toFixed(3)} × ${art.hIn.toFixed(3)} po.</div>`;
   } else {
     const sens = dlines > 0 ? "plus court que" : "plus haut que";
     el.innerHTML = `<div class="flag">Le fichier mesure ${art.wIn.toFixed(3)} × ${art.hIn.toFixed(3)} po, soit ${Math.abs(dlines).toFixed(1)} ligne${Math.abs(dlines)>1?"s":""} ${sens} le cadre.</div>`;
+  }
+  if (!art.assumed && Math.abs(art.wIn - COLW[snapCols(art.wIn) - 1]) > 0.125){
+    el.innerHTML += `<div class="flag">La largeur du fichier ne correspond à aucun format de la carte. Si l'annonce est entourée de blanc, utilisez « Retirer le blanc » sous la page.</div>`;
   }
   if (art.trimmed && !art.assumed){
     el.innerHTML += `<div class="flag ok">Fond perdu retiré : la mesure porte sur le format coupé de l’annonce.</div>`;
@@ -569,8 +600,8 @@ $("lock").addEventListener("change", ()=>{
 $("tarif").addEventListener("change", sync);
 $("reset").addEventListener("click", ()=>{
   if (!art) return;
-  cols  = snapCols(art.wIn);
-  lines = fromInches(art.hIn);
+  cols  = art.baseCols;
+  lines = art.baseLines;
   sync(); draw();
 });
 
@@ -588,7 +619,170 @@ fileEl.addEventListener("change", ()=>{
   const f = fileEl.files[0]; if (f) f.arrayBuffer().then(b=> handle(f,b));
 });
 
-window.addEventListener("resize", draw);
+// ---------- recadrage ----------
+// La zone retenue est gardée en fractions du fichier complet (0 à 1).
+let crop = {x0:0, y0:0, x1:1, y1:1};
+let cgeo = null, cdrag = null;
+const TOL = 0.125, AGR_MAX = 0.5;
+const estComplet = () => crop.x0 <= 0.001 && crop.y0 <= 0.001 && crop.x1 >= 0.999 && crop.y1 >= 0.999;
+
+// Même règle que l'automatisation Airtable : colonne la plus proche si la largeur
+// tombe juste, sinon colonne supérieure (agrandissement d'au plus 50 %).
+function tailleRecadre(w, h){
+  const n = snapCols(w);
+  if (Math.abs(w - COLW[n-1]) <= TOL) return {cols:n, lines:fromInches(h)};
+  const i = COLW.findIndex(c => c >= w - TOL);
+  if (i >= 0 && COLW[i]/w - 1 <= AGR_MAX) return {cols:i+1, lines:fromInches(h*COLW[i]/w)};
+  return {cols:n, lines:fromInches(h*COLW[n-1]/w)};
+}
+
+function applyCrop(){
+  if (!art) return;
+  const F = art.full;
+  if (estComplet()){
+    art.canvas = F; art.wIn = art.fullW; art.hIn = art.fullH; art.cropped = false;
+    cols = snapCols(art.wIn); lines = fromInches(art.hIn);
+  } else {
+    const sx = Math.round(crop.x0*F.width),  sy = Math.round(crop.y0*F.height);
+    const sw = Math.max(1, Math.round((crop.x1-crop.x0)*F.width));
+    const sh = Math.max(1, Math.round((crop.y1-crop.y0)*F.height));
+    const c = document.createElement("canvas");
+    c.width = sw; c.height = sh;
+    c.getContext("2d").drawImage(F, sx, sy, sw, sh, 0, 0, sw, sh);
+    art.canvas = c;
+    art.wIn = art.fullW*(crop.x1-crop.x0);
+    art.hIn = art.fullH*(crop.y1-crop.y0);
+    art.cropped = true;
+    const t = tailleRecadre(art.wIn, art.hIn);
+    cols = t.cols; lines = t.lines;
+  }
+  art.baseCols = cols; art.baseLines = lines;
+  $("nocrop").disabled = estComplet();
+  sync(); draw(); drawCrop();
+}
+
+function drawCrop(){
+  const cv = $("cropcv");
+  if (!art){ return; }
+  const F = art.full, ctx = cv.getContext("2d");
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const maxW = Math.min(300, cv.parentElement.clientWidth || 300), maxH = 360;
+  const k = Math.min(maxW/F.width, maxH/F.height);
+  const W = F.width*k, H = F.height*k;
+  cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr);
+  cv.style.width = Math.round(W)+"px"; cv.style.height = Math.round(H)+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const css = getComputedStyle(document.documentElement), C = n => css.getPropertyValue(n).trim();
+
+  ctx.fillStyle = "#fff"; ctx.fillRect(0,0,W,H);
+  ctx.drawImage(F, 0, 0, W, H);
+  const x0 = crop.x0*W, y0 = crop.y0*H, x1 = crop.x1*W, y1 = crop.y1*H;
+  // voile hors de la zone retenue
+  ctx.fillStyle = "rgba(20,24,30,.45)";
+  ctx.fillRect(0,0,W,y0); ctx.fillRect(0,y1,W,H-y1);
+  ctx.fillRect(0,y0,x0,y1-y0); ctx.fillRect(x1,y0,W-x1,y1-y0);
+  ctx.strokeStyle = C("--mes"); ctx.lineWidth = 2;
+  ctx.strokeRect(x0+1, y0+1, Math.max(0,x1-x0-2), Math.max(0,y1-y0-2));
+  // poignées : coins et milieux des bords
+  ctx.fillStyle = C("--mes");
+  const hs = 8, mx = (x0+x1)/2, my = (y0+y1)/2;
+  [[x0,y0],[x1,y0],[x0,y1],[x1,y1],[mx,y0],[mx,y1],[x0,my],[x1,my]]
+    .forEach(([x,y]) => ctx.fillRect(x-hs/2, y-hs/2, hs, hs));
+  cgeo = {W, H};
+  $("nocrop").disabled = estComplet();
+}
+
+// Quelle partie de la zone est sous le pointeur : bords, coins, ou intérieur.
+function cropHit(p){
+  if (!cgeo) return null;
+  const pad = 9, {W, H} = cgeo;
+  const x0 = crop.x0*W, y0 = crop.y0*H, x1 = crop.x1*W, y1 = crop.y1*H;
+  const inX = p.x > x0-pad && p.x < x1+pad, inY = p.y > y0-pad && p.y < y1+pad;
+  if (!inX || !inY) return null;
+  const h = {l: Math.abs(p.x-x0) <= pad, r: Math.abs(p.x-x1) <= pad, t: Math.abs(p.y-y0) <= pad, b: Math.abs(p.y-y1) <= pad};
+  if (h.l || h.r || h.t || h.b) return h;
+  return {move:true};
+}
+function cropCursor(h){
+  if (!h) return "default";
+  if (h.move) return "move";
+  if ((h.l && h.t) || (h.r && h.b)) return "nwse-resize";
+  if ((h.r && h.t) || (h.l && h.b)) return "nesw-resize";
+  return (h.l || h.r) ? "ew-resize" : "ns-resize";
+}
+function cropPos(e){
+  const r = $("cropcv").getBoundingClientRect();
+  return {x: e.clientX - r.left, y: e.clientY - r.top};
+}
+
+$("cropcv").addEventListener("pointerdown", e=>{
+  if (!art) return;
+  const p = cropPos(e), h = cropHit(p);
+  if (!h) return;
+  cdrag = {h, p0:p, c0:Object.assign({}, crop)};
+  $("stagecap").textContent = "Recadrage : relâchez pour garder la zone.";
+  $("cropcv").setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+$("cropcv").addEventListener("pointermove", e=>{
+  const p = cropPos(e);
+  if (!cdrag){ $("cropcv").style.cursor = cropCursor(cropHit(p)); return; }
+  const {W, H} = cgeo, MIN = 0.03;
+  const dx = (p.x - cdrag.p0.x)/W, dy = (p.y - cdrag.p0.y)/H, c0 = cdrag.c0, h = cdrag.h;
+  const c = Object.assign({}, c0);
+  if (h.move){
+    const w = c0.x1-c0.x0, hh = c0.y1-c0.y0;
+    c.x0 = Math.min(1-w, Math.max(0, c0.x0+dx)); c.x1 = c.x0+w;
+    c.y0 = Math.min(1-hh, Math.max(0, c0.y0+dy)); c.y1 = c.y0+hh;
+  } else {
+    if (h.l) c.x0 = Math.min(c0.x1-MIN, Math.max(0, c0.x0+dx));
+    if (h.r) c.x1 = Math.max(c0.x0+MIN, Math.min(1, c0.x1+dx));
+    if (h.t) c.y0 = Math.min(c0.y1-MIN, Math.max(0, c0.y0+dy));
+    if (h.b) c.y1 = Math.max(c0.y0+MIN, Math.min(1, c0.y1+dy));
+  }
+  crop = c;
+  applyCrop();
+});
+["pointerup","pointercancel"].forEach(ev =>
+  $("cropcv").addEventListener(ev, e=>{
+    if (!cdrag) return;
+    cdrag = null;
+    try{ $("cropcv").releasePointerCapture(e.pointerId); }catch(err){}
+    $("stagecap").textContent = estComplet() ? "Fichier complet." : "Zone retenue. Ajustez les bords au besoin.";
+  })
+);
+
+// Retirer le blanc : plus petit rectangle qui contient tout ce qui n'est pas blanc.
+$("autocrop").addEventListener("click", ()=>{
+  if (!art) return;
+  const F = art.full, k = Math.min(1, 1200/Math.max(F.width, F.height));
+  const w = Math.max(1, Math.round(F.width*k)), h = Math.max(1, Math.round(F.height*k));
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0,0,w,h);
+  ctx.drawImage(F, 0, 0, w, h);
+  const d = ctx.getImageData(0,0,w,h).data;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y=0; y<h; y++){
+    for (let x=0; x<w; x++){
+      const i = (y*w + x)*4;
+      if (Math.min(d[i], d[i+1], d[i+2]) < 235){
+        if (x<x0) x0=x; if (x>x1) x1=x; if (y<y0) y0=y; if (y>y1) y1=y;
+      }
+    }
+  }
+  if (x1 < 0){ $("stagecap").textContent = "Aucun contenu trouvé : le fichier semble entièrement blanc."; return; }
+  crop = {x0: x0/w, y0: y0/h, x1: (x1+1)/w, y1: (y1+1)/h};
+  applyCrop();
+  $("stagecap").textContent = estComplet() ? "Aucun blanc à retirer autour de l'annonce." : "Blanc retiré. Ajustez les bords au besoin.";
+});
+$("nocrop").addEventListener("click", ()=>{
+  crop = {x0:0, y0:0, x1:1, y1:1};
+  applyCrop();
+  $("stagecap").textContent = "Fichier complet.";
+});
+
+window.addEventListener("resize", ()=>{ draw(); drawCrop(); });
 sync(); draw();
 
 // ---------- ouverture depuis Airtable ----------
