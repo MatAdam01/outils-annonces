@@ -125,6 +125,7 @@ button.ghost[disabled]:hover{border-color:var(--rule);color:inherit}
       <h2>Recadrage</h2>
       <canvas id="cropcv" aria-label="Fichier complet avec la zone retenue"></canvas>
       <div class="size">
+        <button class="ghost" id="trimcrop" hidden>Format coupé</button>
         <button class="ghost" id="autocrop">Retirer le blanc</button>
         <button class="ghost" id="nocrop" disabled>Fichier complet</button>
       </div>
@@ -290,8 +291,10 @@ function octetsEnTexte(u8){
   return out;
 }
 
-// pdf.js donne la page selon le CropBox (ou le MediaBox hérité). Si le fichier
-// porte un TrimBox plus petit — un fond perdu —, on ne garde que le format coupé.
+// L'outil affiche et mesure la page telle quelle (CropBox, ou MediaBox hérité).
+// Si le PDF déclare un format coupé (TrimBox) plus petit — fond perdu, traits de
+// coupe —, on le signale et on le garde sous la main pour le bouton « Format coupé »,
+// sans rien retirer de nous-mêmes.
 async function readPdf(buf){
   let trim = null;
   try{
@@ -303,37 +306,29 @@ async function readPdf(buf){
   const page = await pdf.getPage(1);
   const vp1  = page.getViewport({scale:1});
 
-  // Zone retenue, en points à l'échelle 1 : la page entière, ou le TrimBox
-  // ramené dans la page (rotation comprise) s'il est réellement plus petit.
-  let zone = {x:0, y:0, w:vp1.width, h:vp1.height}, trimmed = false;
+  // Format coupé, en fractions de la page affichée (rotation comprise).
+  let trimZone = null;
   if (trim){
     const r = vp1.convertToViewportRectangle(trim);
     const x0 = Math.max(0, Math.min(r[0], r[2])), x1 = Math.min(vp1.width,  Math.max(r[0], r[2]));
     const y0 = Math.max(0, Math.min(r[1], r[3])), y1 = Math.min(vp1.height, Math.max(r[1], r[3]));
     if (x1 - x0 > 14 && y1 - y0 > 14 && (vp1.width - (x1 - x0) > 0.5 || vp1.height - (y1 - y0) > 0.5)){
-      zone = {x:x0, y:y0, w:x1 - x0, h:y1 - y0}; trimmed = true;
+      trimZone = {x0: x0/vp1.width, y0: y0/vp1.height, x1: x1/vp1.width, y1: y1/vp1.height,
+                  wIn: (x1 - x0)/72, hIn: (y1 - y0)/72};
     }
   }
 
   const target = 900;
-  const scale  = Math.min(target/zone.w, target/zone.h, 6);
+  const scale  = Math.min(target/vp1.width, target/vp1.height, 6);
   const vp = page.getViewport({scale});
-  const full = document.createElement("canvas");
-  full.width  = Math.max(1, Math.round(vp.width));
-  full.height = Math.max(1, Math.round(vp.height));
-  const fctx = full.getContext("2d");
-  fctx.fillStyle = "#fff"; fctx.fillRect(0,0,full.width,full.height);
-  await page.render({canvasContext:fctx, viewport:vp}).promise;
+  const cv = document.createElement("canvas");
+  cv.width  = Math.max(1, Math.round(vp.width));
+  cv.height = Math.max(1, Math.round(vp.height));
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0,0,cv.width,cv.height);
+  await page.render({canvasContext:ctx, viewport:vp}).promise;
 
-  let cv = full;
-  if (trimmed){
-    cv = document.createElement("canvas");
-    cv.width  = Math.max(1, Math.round(zone.w*scale));
-    cv.height = Math.max(1, Math.round(zone.h*scale));
-    cv.getContext("2d").drawImage(full, zone.x*scale, zone.y*scale, zone.w*scale, zone.h*scale, 0, 0, cv.width, cv.height);
-  }
-
-  return {canvas:cv, wIn:zone.w/72, hIn:zone.h/72, trimmed};
+  return {canvas:cv, wIn:vp1.width/72, hIn:vp1.height/72, trimZone};
 }
 
 function imgDensity(buf, type){
@@ -389,6 +384,7 @@ async function handle(file, buf){
     lines = fromInches(art.hIn);
     art.baseCols = cols; art.baseLines = lines;   // point de retour
     $("cropblk").hidden = false;
+    $("trimcrop").hidden = !art.trimZone;
     $("stagecap").textContent = "Tirez le coin inférieur droit du cadre.";
     sync(); draw(); drawCrop();
   }catch(err){
@@ -445,6 +441,12 @@ function sync(){
   if (!art){ el.innerHTML = ""; return; }
   const dw = w - art.wIn, dh = h - art.hIn;
   const dlines = (h - art.hIn) * AGATE;
+  if (art.cropped && surFormatCoupe()){
+    const t = art.trimZone, f = w / art.wIn, pct = Math.round((f - 1) * 100);
+    const echelle = Math.abs(pct) < 1 ? "" : pct > 0 ? `, agrandi de ${pct} % pour occuper ${cols} colonne${cols>1?"s":""}` : `, réduit de ${-pct} % pour occuper ${cols} colonne${cols>1?"s":""}`;
+    el.innerHTML = `<div class="flag ok">Format coupé : ${t.wIn.toFixed(3)} × ${t.hIn.toFixed(3)} po, sans le fond perdu${echelle}.</div>`;
+    return;
+  }
   if (art.cropped){
     const f = w / art.wIn, pct = Math.round((f - 1) * 100);
     const echelle = pct > 0 ? `agrandie de ${pct} %` : pct < 0 ? `réduite de ${-pct} %` : "à sa taille";
@@ -463,11 +465,12 @@ function sync(){
     const sens = dlines > 0 ? "plus court que" : "plus haut que";
     el.innerHTML = `<div class="flag">Le fichier mesure ${art.wIn.toFixed(3)} × ${art.hIn.toFixed(3)} po, soit ${Math.abs(dlines).toFixed(1)} ligne${Math.abs(dlines)>1?"s":""} ${sens} le cadre.</div>`;
   }
-  if (!art.assumed && Math.abs(art.wIn - COLW[snapCols(art.wIn) - 1]) > 0.125){
+  if (!art.assumed && !art.trimZone && Math.abs(art.wIn - COLW[snapCols(art.wIn) - 1]) > 0.125){
     el.innerHTML += `<div class="flag">La largeur du fichier ne correspond à aucun format de la carte. Si l'annonce est entourée de blanc, utilisez « Retirer le blanc » sous la page.</div>`;
   }
-  if (art.trimmed && !art.assumed){
-    el.innerHTML += `<div class="flag ok">Fond perdu retiré : la mesure porte sur le format coupé de l’annonce.</div>`;
+  if (art.trimZone){
+    const t = art.trimZone;
+    el.innerHTML += `<div class="flag">Ce PDF indique un format coupé de ${t.wIn.toFixed(3)} × ${t.hIn.toFixed(3)} po (fond perdu et traits de coupe autour). Cliquez « Format coupé » sous la page pour mesurer l'annonce sans le fond perdu.</div>`;
   }
 }
 
@@ -775,6 +778,23 @@ $("autocrop").addEventListener("click", ()=>{
   crop = {x0: x0/w, y0: y0/h, x1: (x1+1)/w, y1: (y1+1)/h};
   applyCrop();
   $("stagecap").textContent = estComplet() ? "Aucun blanc à retirer autour de l'annonce." : "Blanc retiré. Ajustez les bords au besoin.";
+});
+// La zone retenue est-elle exactement le format coupé déclaré par le PDF ?
+function surFormatCoupe(){
+  const t = art && art.trimZone, e = 0.002;
+  return !!t && Math.abs(crop.x0-t.x0)<e && Math.abs(crop.y0-t.y0)<e && Math.abs(crop.x1-t.x1)<e && Math.abs(crop.y1-t.y1)<e;
+}
+$("trimcrop").addEventListener("click", ()=>{
+  if (!art || !art.trimZone) return;
+  const t = art.trimZone;
+  crop = {x0:t.x0, y0:t.y0, x1:t.x1, y1:t.y1};
+  applyCrop();
+  // mesure exacte du format coupé, plutôt que des pixels arrondis
+  art.wIn = t.wIn; art.hIn = t.hIn;
+  const r = tailleRecadre(t.wIn, t.hIn);
+  cols = r.cols; lines = r.lines; art.baseCols = cols; art.baseLines = lines;
+  sync(); draw();
+  $("stagecap").textContent = "Format coupé retenu. Ajustez les bords au besoin.";
 });
 $("nocrop").addEventListener("click", ()=>{
   crop = {x0:0, y0:0, x1:1, y1:1};
